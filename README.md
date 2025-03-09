@@ -63,7 +63,7 @@ Zico Agent leverages several modern technologies to ensure efficiency and scalab
 - **Containerization**: We use **Docker** to ensure the application is easy to configure, scale, and run in different environments. Docker Compose is used to orchestrate the necessary containers for the system to function.
 
 ## Architecture
-![Data Extraction Architecture](images/etl_architecture.png)
+![Data Extraction Architecture](images/etl_architecture.jpeg)
 
 ## Requirements
 

@@ -19,7 +19,7 @@ class Config:
             {
                 "path": "src.agents.default.agent",
                 "class": "DefaultAgent",
-                "description": "Must be used for meta-queries that ask about active Morpheus agents, and also for general, simple questions",
+                "description": "Must be used for meta-queries that ask about active Zico agents, and also for general, simple questions",
                 "name": "default",
                 "human_readable_name": "Default General Purpose",
                 "command": "morpheus",
@@ -42,7 +42,7 @@ class Config:
                 "human_readable_name": "Base Transaction Manager",
                 "command": "base",
                 "upload_required": False,
-            },
+            },  
             {
                 "path": "src.agents.crypto_data.agent",
                 "class": "CryptoDataAgent",

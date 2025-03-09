@@ -1,0 +1,18 @@
+.headerBar {
+  background-color: #020804;
+  border-bottom: 2px solid gray;
+  padding: 8px 0;
+  width: 100%;
+  z-index: 1401;
+}
+
+.logo {
+  display: flex;
+  align-items: center;
+}
+
+.buttonContainer {
+  display: flex;
+  gap: 16px;
+  align-items: center;
+}

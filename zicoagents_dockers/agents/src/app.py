@@ -7,6 +7,7 @@ import uvicorn
 from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from langchain_google_genai import ChatGoogleGenerativeAI, GoogleGenerativeAIEmbeddings
+from dotenv import load_dotenv
 
 from src.config import Config
 from src.delegator import Delegator
@@ -58,14 +59,20 @@ app.add_middleware(
 UPLOAD_FOLDER = os.path.join(os.getcwd(), "uploads")
 os.makedirs(UPLOAD_FOLDER, exist_ok=True)
 
+load_dotenv()
+
+gemini_api_key = os.getenv("GEMINI_API_KEY")
+if not gemini_api_key:
+    raise ValueError("GEMINI_API_KEY não encontrada nas variáveis de ambiente")
+
 llm = ChatGoogleGenerativeAI(
     model=Config.GEMINI_MODEL,
     temperature=0.7,
-    google_api_key=os.getenv("GEMINI_API_KEY"),
+    google_api_key=gemini_api_key,
 )
 embeddings = GoogleGenerativeAIEmbeddings(
     model=Config.GEMINI_EMBEDDING_MODEL,
-    google_api_key=os.getenv("GEMINI_API_KEY"),
+    google_api_key=gemini_api_key,
 )
 
 logger.info("Initialized LLM and embeddings")

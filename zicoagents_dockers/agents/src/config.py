@@ -9,6 +9,9 @@ logging.basicConfig(level=logging.INFO)
 class Config:
 
     # Model configuration
+    GEMINI_MODEL = "gemini-1.5-pro"
+    GEMINI_EMBEDDING_MODEL = "models/embedding-001"
+
     OLLAMA_MODEL = "llama3.2:3b"
     OLLAMA_EMBEDDING_MODEL = "nomic-embed-text"
     OLLAMA_URL = "http://ollama:11434"

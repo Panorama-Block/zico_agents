@@ -12,9 +12,9 @@ services:
       - agents_data:/var/lib/agents
       - ./agents/src:/app/src
     environment:
-      - BASE_URL=http://ollama:11434
+      - GEMINI_API_KEY=${GEMINI_API_KEY}
     networks:
-      - ollama-network
+      - app-network
 
   nginx:
     image: lachsbagel/moragents_dockers-nginx:amd64-0.2.2
@@ -25,21 +25,21 @@ services:
     ports:
       - "3333:80"
     networks:
-      - ollama-network
+      - app-network
 
-  ollama:
-    image: ollama/ollama
-    ports:
-      - "11434:11434"
-    volumes:
-      - ollama_data:/root/.ollama
-    networks:
-      - ollama-network
+  # ollama:
+  #   image: ollama/ollama
+  #   ports:
+  #     - "11434:11434"
+  #   volumes:
+  #     - ollama_data:/root/.ollama
+  #   networks:
+  #     - ollama-network
 
 networks:
-  ollama-network:
+  app-network:
     driver: bridge
 
 volumes:
   agents_data:
-  ollama_data:
+  # ollama_data:

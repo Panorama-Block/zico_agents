@@ -6,8 +6,7 @@ from typing import Tuple, Dict, Any
 import uvicorn
 from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
-from langchain_community.embeddings import OllamaEmbeddings
-from langchain_ollama import ChatOllama
+from langchain_google_genai import ChatGoogleGenerativeAI, GoogleGenerativeAIEmbeddings
 
 from src.config import Config
 from src.delegator import Delegator
@@ -59,15 +58,18 @@ app.add_middleware(
 UPLOAD_FOLDER = os.path.join(os.getcwd(), "uploads")
 os.makedirs(UPLOAD_FOLDER, exist_ok=True)
 
-# Initialize LLM and embeddings
-llm = ChatOllama(
-    model=Config.OLLAMA_MODEL,
-    base_url=Config.OLLAMA_URL,
+llm = ChatGoogleGenerativeAI(
+    model=Config.GEMINI_MODEL,
+    temperature=0.7,
+    google_api_key=os.getenv("GEMINI_API_KEY"),
 )
-embeddings = OllamaEmbeddings(model=Config.OLLAMA_EMBEDDING_MODEL, base_url=Config.OLLAMA_URL)
+embeddings = GoogleGenerativeAIEmbeddings(
+    model=Config.GEMINI_EMBEDDING_MODEL,
+    google_api_key=os.getenv("GEMINI_API_KEY"),
+)
 
 logger.info("Initialized LLM and embeddings")
-logger.info(f"LLM model: {Config.OLLAMA_URL}, {Config.OLLAMA_EMBEDDING_MODEL}, {Config.OLLAMA_MODEL}")
+logger.info(f"LLM model: {Config.GEMINI_MODEL}, Embeddings model: {Config.GEMINI_EMBEDDING_MODEL}")
 
 # Initialize delegator
 delegator = Delegator(llm, embeddings)

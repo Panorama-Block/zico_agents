@@ -36,6 +36,7 @@ ENV CHROME_BIN=/usr/bin/chromium
 ENV CHROMEDRIVER_BIN=/usr/bin/chromedriver
 
 COPY . .
+COPY .env .env
 
 # Expose the port your application listens on
 EXPOSE 5000

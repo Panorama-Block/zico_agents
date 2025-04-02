@@ -27,14 +27,14 @@ services:
     networks:
       - ollama-network
 
-  ollama:
-    image: ollama/ollama
-    ports:
-      - "11434:11434"
-    volumes:
-      - ollama_data:/root/.ollama
-    networks:
-      - ollama-network
+  # ollama:
+  #   image: ollama/ollama
+  #   ports:
+  #     - "11434:11434"
+  #   volumes:
+  #     - ollama_data:/root/.ollama
+  #   networks:
+  #     - ollama-network
 
 networks:
   ollama-network:
@@ -42,4 +42,4 @@ networks:
 
 volumes:
   agents_data:
-  ollama_data:
+  # ollama_data:

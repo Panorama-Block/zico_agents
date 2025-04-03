@@ -30,8 +30,8 @@ export const OneInchConfig: React.FC<OneInchConfigProps> = ({ onSave }) => {
       apiKey: "",
     });
 
-  const textColor = useColorModeValue("gray.600", "gray.300");
-  const labelColor = useColorModeValue("gray.700", "gray.200");
+  const textColor = useColorModeValue("gray.200", "gray.300");
+  const labelColor = useColorModeValue("gray.400", "gray.300");
 
   const credentialLabels: Record<keyof OneInchCredentials, string> = {
     apiKey: "API Key",
@@ -100,9 +100,8 @@ export const OneInchConfig: React.FC<OneInchConfigProps> = ({ onSave }) => {
             </FormLabel>
             <Input
               type="password"
-              placeholder={`Enter new ${
-                credentialLabels[key as keyof OneInchCredentials]
-              }`}
+              placeholder={`Enter new ${credentialLabels[key as keyof OneInchCredentials]
+                }`}
               value={value}
               onChange={(e) =>
                 setCredentials((prev) => ({

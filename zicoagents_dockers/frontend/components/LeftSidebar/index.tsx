@@ -41,12 +41,12 @@ export const LeftSidebar: FC<LeftSidebarProps> = ({
 }) => {
   const [conversations, setConversations] = useState<string[]>([]);
   const [isLoading, setIsLoading] = useState(false);
-  const [selectedModel, setSelectedModel] = useState("llama3.2:3b");
+  const [selectedModel, setSelectedModel] = useState("gemini-flash");
   const backendClient = getHttpClient();
   const router = useRouter();
   const toast = useToast();
 
-  const modelOptions = [{ value: "llama3.2:3b", label: "Llama 3.2 (3B)" }];
+  const modelOptions = [{ value: "gemini-flash", label: "Gemini Flash 1.5" }];
 
   // Decide which icon to show depending on whether the sidebar is open
   const ToggleIcon = isSidebarOpen ? IconChevronLeft : IconChevronRight;
@@ -248,7 +248,7 @@ export const LeftSidebar: FC<LeftSidebarProps> = ({
                 </Select>
               </Box>
 
-              <Box
+              {/* <Box
                 display="flex"
                 alignItems="center"
                 justifyContent="space-between"
@@ -259,11 +259,11 @@ export const LeftSidebar: FC<LeftSidebarProps> = ({
                 <Text fontSize="sm" color="green.400" fontWeight="500">
                   Free. Running locally.
                 </Text>
-              </Box>
+              </Box> */}
 
-              <Text fontSize="sm" color="gray.400" fontStyle="italic">
+              {/* <Text fontSize="sm" color="gray.400" fontStyle="italic">
                 More powerful models are coming soon via the Lumerin Node Router
-              </Text>
+              </Text> */}
             </Box>
 
             <Workflows />

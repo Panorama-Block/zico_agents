@@ -1,6 +1,6 @@
 .headerBar {
-  background-color: #020804;
-  border-bottom: 2px solid gray;
+  background-color: var(--background-secondary);
+  border-bottom: 1px solid rgba(255, 255, 255, 0.1);
   padding: 8px 0;
   width: 100%;
   z-index: 1401;
@@ -9,6 +9,7 @@
 .logo {
   display: flex;
   align-items: center;
+  color: var(--text-color);
 }
 
 .buttonContainer {

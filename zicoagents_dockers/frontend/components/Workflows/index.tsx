@@ -236,7 +236,7 @@ export const Workflows: React.FC = () => {
           </Box>
         ))
       ) : (
-        <Text color="gray.500" textAlign="center">
+        <Text color="gray.400" textAlign="center">
           No workflows created yet
         </Text>
       )}
@@ -402,7 +402,7 @@ export const Workflows: React.FC = () => {
 
       <Modal isOpen={isOpen} onClose={() => setIsOpen(false)} size="xl">
         <ModalOverlay />
-        <ModalContent bg="gray.900">
+        <ModalContent bg="var(--background-primary)">
           <ModalHeader color="white" textAlign="center">
             Workflows
           </ModalHeader>

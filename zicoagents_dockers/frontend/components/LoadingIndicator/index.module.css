@@ -1,11 +1,11 @@
 .messageGrid {
-  background-color: var(--background-primary);
+  /* background-color: var(--background-primary); */
   color: var(--text-color);
   border-radius: 4px;
   margin-bottom: 8px;
   gap: 8px;
   padding: 16px;
-  border: 1px solid rgba(255, 255, 255, 0.1);
+  /* border: 1px solid rgba(255, 255, 255, 0.1); */
 }
 
 .nameText {

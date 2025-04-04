@@ -69,6 +69,7 @@ export const Chat: FC<ChatProps> = ({
         top={0}
         width="30%"
         height="100%"
+        bg="var(--background-secondary)"
         transition="transform 0.3s ease-in-out"
         transform={isWidgetOpen ? "translateX(0)" : "translateX(100%)"}
         borderLeft="1px solid gray"

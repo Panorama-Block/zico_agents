@@ -163,7 +163,7 @@ export const Widgets: FC<WidgetsProps> = ({ activeWidget, onClose }) => {
     <Box
       w="full"
       h="100%"
-      bg="#020804"
+      bg="var(--background-secondary)"
       borderRadius="md"
       overflow="auto"
       position="relative"

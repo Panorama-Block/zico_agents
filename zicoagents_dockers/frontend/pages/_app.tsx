@@ -41,10 +41,10 @@ const ButtonStyles = defineStyleConfig({
       fontSize: '16px',
       background: '#59F886',
       borderRadius: '24px',
-      color: '#020804',
+      color: 'var(--background-secondary)',
       '&:hover': {
         background: '#59F886',
-        color: '#020804',
+        color: 'var(--background-secondary)',
         transform: 'scale(1.05)',
         boxShadow: '0px 4px 4px rgba(0, 0, 0, 0.25)',
         border: '1px solid #59F886'
@@ -57,7 +57,7 @@ const theme = extendTheme({
   initialColorMode: 'dark',
   useSystemColorMode: false,
   colors: {
-    'header': '#020804',
+    'header': 'var(--background-secondary)',
     'pop-up-bg': '#1C201D',
   },
   components: {

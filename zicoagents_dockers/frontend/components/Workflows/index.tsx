@@ -394,7 +394,11 @@ export const Workflows: React.FC = () => {
         leftIcon={<FaRobot />}
         onClick={() => setIsOpen(true)}
         size="md"
-        colorScheme="gray"
+        backgroundColor="var(--background-secondary)"
+        color="var(--text-primary)"
+        _hover={{
+          backgroundColor: "var(--background-primary)"
+        }}
         variant="solid"
       >
         Workflows

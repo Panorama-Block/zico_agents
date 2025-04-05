@@ -12,7 +12,7 @@ RUN apt-get update && apt-get install -y gcc g++ procps && rm -rf /var/lib/apt/l
 # Install Python dependencies
 RUN python3 -m pip install --no-cache-dir --upgrade pip && \
     python3 -m pip install --no-cache-dir --upgrade setuptools wheel && \
-    python3 -m pip install --no-cache-dir langchain-google-genai==0.1.0 && \
+    python3 -m pip install --no-cache-dir langchain-google-genai==2.1.2 && \
     python3 -m pip install --no-cache-dir -r requirements.txt
 
 # Chrome installation for Debian Bullseye

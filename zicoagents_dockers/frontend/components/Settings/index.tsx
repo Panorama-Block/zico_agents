@@ -28,9 +28,12 @@ export const SettingsButton: React.FC = () => {
         leftIcon={<FaCog />}
         onClick={() => setIsOpen(true)}
         size="md"
-        colorScheme="gray"
+        backgroundColor="var(--background-secondary)"
+        color="var(--text-primary)"
+        _hover={{
+          backgroundColor: "var(--background-primary)"
+        }}
         variant="solid"
-        mr={2}
       >
         Settings
       </Button>

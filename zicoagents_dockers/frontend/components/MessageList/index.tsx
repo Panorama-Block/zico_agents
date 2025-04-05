@@ -7,7 +7,7 @@ export const MessageList: FC<{ messages: ChatMessage[] }> = ({ messages }) => {
   return (
     <Box
       flex="1"
-      bg="#020804"
+      bg="var(--background-secondary)"
       p={4}
       sx={{
         overflowY: "scroll",

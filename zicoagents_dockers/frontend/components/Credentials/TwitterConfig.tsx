@@ -42,8 +42,8 @@ export const TwitterConfig: React.FC<TwitterConfigProps> = ({ onSave }) => {
       bearerToken: "",
     });
 
-  const textColor = useColorModeValue("gray.600", "gray.300");
-  const labelColor = useColorModeValue("gray.700", "gray.200");
+  const textColor = useColorModeValue("gray.200", "gray.300");
+  const labelColor = useColorModeValue("gray.400", "gray.300");
 
   const credentialLabels: Record<keyof TwitterCredentials, string> = {
     apiKey: "API Key",
@@ -109,7 +109,7 @@ export const TwitterConfig: React.FC<TwitterConfigProps> = ({ onSave }) => {
   return (
     <VStack spacing={6} align="stretch">
       <Box>
-        <Heading size="md" mb={2}>
+        <Heading size="md" mb={2} color>
           X API Configuration
         </Heading>
         <Text fontSize="sm" color={textColor}>

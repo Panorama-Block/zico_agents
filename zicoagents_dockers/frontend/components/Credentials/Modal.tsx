@@ -73,18 +73,20 @@ export const ApiCredentialsModal: React.FC<ApiCredentialsModalProps> = ({
         setSelectedApi(null);
         onClose();
       }}
+      bg="var(--background-primary)"
       size="xl"
       scrollBehavior="inside"
       isCentered
     >
       <ModalOverlay />
-      <ModalContent bg={bgColor} maxW={selectedApi ? "2xl" : "4xl"}>
+      <ModalContent bg="var(--background-primary)" maxW={selectedApi ? "2xl" : "4xl"}>
         <ModalHeader>
           {selectedApi && (
             <Button
               leftIcon={<IoArrowBack />}
               variant="ghost"
               size="sm"
+              color="gray.300"
               onClick={() => setSelectedApi(null)}
               position="absolute"
               left={4}
@@ -93,7 +95,7 @@ export const ApiCredentialsModal: React.FC<ApiCredentialsModalProps> = ({
               Back
             </Button>
           )}
-          <Flex justify="center">
+          <Flex justify="center" color="gray.100">
             {selectedApi
               ? API_OPTIONS.find((api) => api.id === selectedApi)?.name
               : "API Credentials"}
@@ -107,7 +109,7 @@ export const ApiCredentialsModal: React.FC<ApiCredentialsModalProps> = ({
                 <Text fontSize="lg" fontWeight="bold" mb={2}>
                   Configure Your API Integrations
                 </Text>
-                <Text fontSize="md" color="gray.500">
+                <Text fontSize="md" color="gray.400">
                   Set up your API credentials for various services to enable
                   advanced features and integrations.
                 </Text>
@@ -124,11 +126,12 @@ export const ApiCredentialsModal: React.FC<ApiCredentialsModalProps> = ({
                   <Box
                     key={api.id}
                     p={4}
-                    bg={cardBgColor}
+                    bg="var(--background-primary)"
+                    border="1px solid rgba(255, 255, 255, 0.1)"
                     borderRadius="lg"
                     cursor="pointer"
                     onClick={() => setSelectedApi(api.id)}
-                    _hover={{ bg: cardHoverBgColor }}
+                    _hover={{ bg: "var(--background-secondary)" }}
                     transition="background-color 0.2s"
                   >
                     <VStack spacing={3}>

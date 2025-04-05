@@ -14,19 +14,34 @@
 }
 
 .inputGroup {
-  padding-top: 0.5rem;
-  padding-bottom: 0.5rem;
+  padding: 8px 12px;
   margin-bottom: 1rem;
-  border-radius: 8px;
-  background-color: #353936;
+  border-radius: 6px;
+  background-color: var(--background-primary);
+  border: 1px solid rgba(255, 255, 255, 0.1);
   width: 100%;
+  display: flex;
+  align-items: center;
+  gap: 8px;
 }
 
 .fileAddon {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 6px;
   background-color: transparent !important;
   border: none !important;
-  color: #59f886 !important;
+  color: var(--text-color) !important;
   cursor: pointer;
+  opacity: 0.8;
+  border-radius: 4px;
+  transition: all 0.2s ease;
+}
+
+.fileAddon:hover {
+  opacity: 1;
+  background-color: rgba(255, 255, 255, 0.1) !important;
 }
 
 .hiddenInput {
@@ -34,13 +49,16 @@
 }
 
 .disabledIcon {
-  color: #6c6c6c !important;
+  opacity: 0.3 !important;
 }
 
 .messageInput {
+  flex: 1;
   border: none !important;
-  color: white !important;
-  width: 100%;
+  color: var(--text-color) !important;
+  background-color: transparent !important;
+  font-size: 14px;
+  padding: 8px;
 }
 
 .messageInput:focus {
@@ -49,16 +67,45 @@
 }
 
 .rightAddon {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 6px;
   background-color: transparent !important;
   border: none !important;
+  color: var(--text-color) !important;
+  cursor: pointer;
+  opacity: 0.8;
+  border-radius: 4px;
+  transition: all 0.2s ease;
+}
+
+.rightAddon:hover {
+  opacity: 1;
+  background-color: rgba(255, 255, 255, 0.1) !important;
 }
 
 .sendButton {
-  background-color: transparent !important;
-  font-size: 24px;
-  color: #59f886 !important;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  padding: 8px 16px;
+  background-color: var(--background-primary);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 6px;
+  color: var(--text-color);
+  font-size: 14px;
+  font-weight: 500;
+  cursor: pointer;
+  transition: all 0.2s ease;
 }
 
 .sendButton:hover {
-  background-color: transparent !important;
+  background-color: var(--background-secondary);
+  border-color: rgba(255, 255, 255, 0.2);
+}
+
+.sendButton:active {
+  transform: translateY(1px);
 }

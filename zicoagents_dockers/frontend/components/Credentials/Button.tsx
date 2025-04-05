@@ -12,9 +12,12 @@ export const ApiCredentialsButton: React.FC = () => {
         leftIcon={<FaLock />}
         onClick={() => setIsOpen(true)}
         size="md"
-        colorScheme="gray"
+        backgroundColor="var(--background-secondary)"
+        color="var(--text-primary)"
+        _hover={{
+          backgroundColor: "var(--background-primary)"
+        }}
         variant="solid"
-        mr={2}
       >
         API Keys
       </Button>

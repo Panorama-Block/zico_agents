@@ -33,8 +33,8 @@ export const CoinbaseConfig: React.FC<CoinbaseConfigProps> = ({ onSave }) => {
       cdpApiSecret: "",
     });
 
-  const textColor = useColorModeValue("gray.600", "gray.300");
-  const labelColor = useColorModeValue("gray.700", "gray.200");
+  const textColor = useColorModeValue("gray.200", "gray.300");
+  const labelColor = useColorModeValue("gray.400", "gray.300");
 
   const credentialLabels: Record<keyof CoinbaseCredentials, string> = {
     cdpApiKey: "Coinbase Developer Platform API Key",
@@ -104,9 +104,8 @@ export const CoinbaseConfig: React.FC<CoinbaseConfigProps> = ({ onSave }) => {
             </FormLabel>
             <Input
               type="password"
-              placeholder={`Enter new ${
-                credentialLabels[key as keyof CoinbaseCredentials]
-              }`}
+              placeholder={`Enter new ${credentialLabels[key as keyof CoinbaseCredentials]
+                }`}
               value={value}
               onChange={(e) =>
                 setCredentials((prev) => ({

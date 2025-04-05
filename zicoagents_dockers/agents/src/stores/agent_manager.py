@@ -1,11 +1,14 @@
 import importlib
 import logging
+import os
 
 from typing import Any, Dict, List, Optional, Tuple
-from langchain_ollama import ChatOllama
-from langchain_community.embeddings import OllamaEmbeddings
+from langchain_google_genai import ChatGoogleGenerativeAI, GoogleGenerativeAIEmbeddings
+from dotenv import load_dotenv
 
 from src.config import Config
+
+load_dotenv()
 
 logger = logging.getLogger(__name__)
 
@@ -19,8 +22,8 @@ class AgentManager:
         selected_agents (List[str]): List of selected agent names
         config (Dict): Configuration dictionary for agents
         agents (Dict[str, Any]): Dictionary of loaded agent instances
-        llm (ChatOllama): Language model instance
-        embeddings (OllamaEmbeddings): Embeddings model instance
+        llm (ChatGoogleGenerativeAI): Language model instance
+        embeddings (GoogleGenerativeAIEmbeddings): Embeddings model instance
     """
 
     def __init__(self, config: Dict) -> None:
@@ -34,8 +37,8 @@ class AgentManager:
         self.selected_agents: List[str] = []
         self.config = config
         self.agents: Dict[str, Any] = {}
-        self.llm: Optional[ChatOllama] = None
-        self.embeddings: Optional[OllamaEmbeddings] = None
+        self.llm: Optional[ChatGoogleGenerativeAI] = None
+        self.embeddings: Optional[GoogleGenerativeAIEmbeddings] = None
 
         # Select first 6 agents by default
         self.set_selected_agents([agent["name"] for agent in config["agents"][:6]])
@@ -61,13 +64,13 @@ class AgentManager:
             logger.error(f"Failed to load agent {agent_config['name']}: {str(e)}")
             return False
 
-    def load_all_agents(self, llm: ChatOllama, embeddings: OllamaEmbeddings) -> None:
+    def load_all_agents(self, llm: ChatGoogleGenerativeAI, embeddings: GoogleGenerativeAIEmbeddings) -> None:
         """
         Load all available agents with the given language and embedding models.
 
         Args:
-            llm (ChatOllama): Language model instance
-            embeddings (OllamaEmbeddings): Embeddings model instance
+            llm (ChatGoogleGenerativeAI): Language model instance
+            embeddings (GoogleGenerativeAIEmbeddings): Embeddings model instance
         """
         self.llm = llm
         self.embeddings = embeddings

@@ -11,10 +11,10 @@ fastapi==0.115.0
 pymupdf==1.22.5
 faiss-cpu==1.8.0.post1
 feedparser
-langchain-text-splitters==0.3.0
 langchain-core==0.3.47
 langchain-community==0.3.1
-langchain-google-genai==2.1.1
+langchain-google-genai==0.1.0
+langchain-text-splitters==0.3.0
 google-api-python-client==2.133.0
 python-dotenv==1.0.0
 tweepy==4.14.0

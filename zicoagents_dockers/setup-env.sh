@@ -51,7 +51,7 @@ main() {
     
     echo -e "${GREEN}Restarting containers...${NC}"
     docker compose down
-    docker compose up -d
+    docker compose up --build -d
 
     echo -e "${GREEN}Configuration complete!${NC}"
 }

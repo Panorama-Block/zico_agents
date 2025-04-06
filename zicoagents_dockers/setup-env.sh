@@ -4,9 +4,17 @@ RED='\033[0;31m'
 GREEN='\033[0;32m'
 NC='\033[0m'
 
+create_ssl_dir() {
+    if [ ! -d "frontend/ssl" ]; then
+        echo -e "${GREEN}Creating SSL directory...${NC}"
+        sudo mkdir -p frontend/ssl
+        sudo chown -R $USER:$USER frontend/ssl
+    fi
+}
+
 create_self_signed_cert() {
     echo -e "${GREEN}Generating self-signed certificates...${NC}"
-    mkdir -p frontend/ssl
+    create_ssl_dir
     openssl req -x509 -nodes -days 365 -newkey rsa:2048 \
         -keyout frontend/ssl/privkey.pem \
         -out frontend/ssl/fullchain.pem \
@@ -15,10 +23,12 @@ create_self_signed_cert() {
 
 copy_production_certs() {
     echo -e "${GREEN}Copying production certificates...${NC}"
-    mkdir -p frontend/ssl
+    create_ssl_dir
     if [ -f "/etc/letsencrypt/live/zico.panoramablock.com/fullchain.pem" ]; then
-        cp /etc/letsencrypt/live/zico.panoramablock.com/fullchain.pem frontend/ssl/
-        cp /etc/letsencrypt/live/zico.panoramablock.com/privkey.pem frontend/ssl/
+        sudo cp /etc/letsencrypt/live/zico.panoramablock.com/fullchain.pem frontend/ssl/
+        sudo cp /etc/letsencrypt/live/zico.panoramablock.com/privkey.pem frontend/ssl/
+        sudo chown $USER:$USER frontend/ssl/*
+        sudo chmod 644 frontend/ssl/*
     else
         echo -e "${RED}Production certificates not found!${NC}"
         return 1
@@ -40,8 +50,8 @@ main() {
     $CERT_FUNC
     
     echo -e "${GREEN}Restarting containers...${NC}"
-    docker-compose down
-    docker-compose up -d
+    docker compose down
+    docker compose up -d
 
     echo -e "${GREEN}Configuration complete!${NC}"
 }

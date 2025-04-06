@@ -1,4 +1,3 @@
-version: "3.8"
 services:
   agents:
     image: lachsbagel/moragents_dockers-agents:amd64-0.2.2
@@ -27,19 +26,9 @@ services:
     networks:
       - app-network
 
-  # ollama:
-  #   image: ollama/ollama
-  #   ports:
-  #     - "11434:11434"
-  #   volumes:
-  #     - ollama_data:/root/.ollama
-  #   networks:
-  #     - ollama-network
-
 networks:
   app-network:
     driver: bridge
 
 volumes:
   agents_data:
-  # ollama_data:

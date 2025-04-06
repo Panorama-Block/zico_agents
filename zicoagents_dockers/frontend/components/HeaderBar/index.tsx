@@ -16,7 +16,7 @@ export const HeaderBar: FC = () => {
     <Box className={classes.headerBar}>
       <HStack spacing={4} width="100%" px={4}>
         <Box >
-          <ArrowBackIcon color="gray.200" onClick={() => router.push("https://www.panoramablock.com")} />
+          <ArrowBackIcon color="gray.200" cursor="pointer" onClick={() => router.push("https://www.panoramablock.com")} />
         </Box>
         <Box className={classes.logo} flexShrink={0}>
 

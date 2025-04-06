@@ -26,7 +26,7 @@ services:
     depends_on:
       - agents
     ports:
-      - "3333:80"
+      - "3000:80"
     networks:
       - app-network
 

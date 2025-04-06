@@ -4,11 +4,13 @@ RED='\033[0;31m'
 GREEN='\033[0;32m'
 NC='\033[0m'
 
+ORIGINAL_USER=$(stat -c '%U' .)
+ORIGINAL_GROUP=$(stat -c '%G' .)
+
 create_ssl_dir() {
     if [ ! -d "frontend/ssl" ]; then
         echo -e "${GREEN}Creating SSL directory...${NC}"
-        sudo mkdir -p frontend/ssl
-        sudo chown -R $USER:$USER frontend/ssl
+        mkdir -p frontend/ssl
     fi
 }
 
@@ -25,14 +27,17 @@ copy_production_certs() {
     echo -e "${GREEN}Copying production certificates...${NC}"
     create_ssl_dir
     if [ -f "/etc/letsencrypt/live/zico.panoramablock.com/fullchain.pem" ]; then
-        sudo cp /etc/letsencrypt/live/zico.panoramablock.com/fullchain.pem frontend/ssl/
-        sudo cp /etc/letsencrypt/live/zico.panoramablock.com/privkey.pem frontend/ssl/
-        sudo chown $USER:$USER frontend/ssl/*
-        sudo chmod 644 frontend/ssl/*
+        cp /etc/letsencrypt/live/zico.panoramablock.com/fullchain.pem frontend/ssl/
+        cp /etc/letsencrypt/live/zico.panoramablock.com/privkey.pem frontend/ssl/
+        chmod 644 frontend/ssl/*
     else
         echo -e "${RED}Production certificates not found!${NC}"
         return 1
     fi
+}
+
+fix_permissions() {
+    chown -R $ORIGINAL_USER:$ORIGINAL_GROUP .
 }
 
 main() {
@@ -49,9 +54,16 @@ main() {
     
     $CERT_FUNC
     
+    fix_permissions
+    
     echo -e "${GREEN}Restarting containers...${NC}"
-    docker compose down
-    docker compose up --build -d
+    if [ "$EUID" -eq 0 ]; then
+        su - $ORIGINAL_USER -c "cd $(pwd) && docker compose down"
+        su - $ORIGINAL_USER -c "cd $(pwd) && docker compose up --build -d"
+    else
+        docker compose down
+        docker compose up --build -d
+    fi
 
     echo -e "${GREEN}Configuration complete!${NC}"
 }

@@ -9,8 +9,9 @@ COPY package*.json ./
 # Install dependencies
 RUN npm install -g npm@10 && npm install
 
-# Copy the rest of the application code
+# Copy the rest of the application code and .env file
 COPY . .
+COPY .env .env.local
 
 # Build the application
 RUN npm run build

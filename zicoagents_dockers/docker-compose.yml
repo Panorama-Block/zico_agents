@@ -27,6 +27,8 @@ services:
       - agents
     ports:
       - "3000:80"
+    volumes:
+      - ./frontend/.env:/usr/share/nginx/html/.env
     networks:
       - app-network
 

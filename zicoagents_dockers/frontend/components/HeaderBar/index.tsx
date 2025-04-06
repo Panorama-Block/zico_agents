@@ -17,7 +17,7 @@ export const HeaderBar: FC = () => {
     if (referrer && referrer.includes('panoramablock.com')) {
       router.back();
     } else {
-      window.location.href = 'https://www.panoramablock/pano-view/bitcoin.com';
+      window.location.href = 'https://www.panoramablock.com/pano-view/bitcoin';
     }
   };
 

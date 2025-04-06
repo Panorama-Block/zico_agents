@@ -21,6 +21,8 @@ services:
       context: ./frontend
       dockerfile: Dockerfile
       target: nginx
+    depends_on:
+      - agents
     ports:
       - "3333:80"
     networks:

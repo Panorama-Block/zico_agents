@@ -31,7 +31,7 @@ services:
     volumes:
       - ./frontend/.env:/usr/share/nginx/html/.env
       - ./frontend/nginx.conf:/etc/nginx/conf.d/default.conf
-      - /etc/letsencrypt:/etc/letsencrypt:ro
+      - ./frontend/ssl:/etc/nginx/certs:ro
     environment:
       - ENVIRONMENT=${ENVIRONMENT:-development}
       - VIRTUAL_HOST=${VIRTUAL_HOST:-localhost}

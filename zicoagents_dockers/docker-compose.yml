@@ -33,6 +33,7 @@ services:
       - ${SSL_CERTS_PATH:-./certs}:/etc/nginx/certs
     environment:
       - ENVIRONMENT=${ENVIRONMENT:-development}
+      - VIRTUAL_HOST=${VIRTUAL_HOST:-localhost}
     networks:
       - app-network
 

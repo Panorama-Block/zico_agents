@@ -12,7 +12,8 @@ RUN apt-get update && apt-get install -y gcc g++ procps && rm -rf /var/lib/apt/l
 # Install Python dependencies
 RUN python3 -m pip install --no-cache-dir --upgrade pip && \
     python3 -m pip install --no-cache-dir --upgrade setuptools wheel && \
-    python3 -m pip install --no-cache-dir -r requirements.txt
+    pip install -r requirements.txt --no-cache-dir --no-deps --ignore-installed && \
+    pip install -r requirements.txt --no-cache-dir
 
 # Chrome installation for Debian Bullseye
 RUN apt-get update && apt-get install -y \

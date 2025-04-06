@@ -29,7 +29,7 @@ export const AgentSelection: React.FC<AgentSelectionProps> = ({ onSave }) => {
   const toast = useToast();
 
   const borderColor = useColorModeValue("gray.200", "gray.700");
-  const textColor = useColorModeValue("gray.600", "gray.300");
+  const textColor = useColorModeValue("gray.500", "gray.300");
 
   useEffect(() => {
     const fetchAgents = async () => {
@@ -154,7 +154,10 @@ export const AgentSelection: React.FC<AgentSelectionProps> = ({ onSave }) => {
           </VStack>
         </Box>
 
-        <Button colorScheme="green" onClick={handleSave} size="md" width="100%">
+        <Button
+          style={{ backgroundColor: 'var(--background-secondary)', color: 'white' }}
+          onClick={handleSave}
+        >
           Save Configuration
         </Button>
       </Box>

@@ -1,3 +1,5 @@
+"use client"
+
 import { useState } from "react";
 import { FaCog } from "react-icons/fa";
 import {
@@ -46,12 +48,12 @@ export const SettingsButton: React.FC = () => {
         isCentered
       >
         <ModalOverlay />
-        <ModalContent backgroundColor={bgColor}>
-          <ModalHeader>Settings</ModalHeader>
+        <ModalContent backgroundColor="var(--background-primary)">
+          <ModalHeader color="white">Settings</ModalHeader>
           <ModalCloseButton />
           <ModalBody pb={6}>
             <Tabs variant="enclosed" isFitted>
-              <TabList mb={4}>
+              <TabList mb={4} sx={{ color: "white" }}>
                 <Tab>General</Tab>
                 <Tab>Agents</Tab>
               </TabList>

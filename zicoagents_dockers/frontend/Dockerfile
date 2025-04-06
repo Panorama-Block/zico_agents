@@ -12,6 +12,9 @@ RUN npm install -g npm@10 && npm install
 # Copy the rest of the application code
 COPY . .
 
+# Copy .env file
+COPY .env .
+
 # Ensure environment variables are available during build
 ARG NEXT_PUBLIC_API_URL
 ENV NEXT_PUBLIC_API_URL=${NEXT_PUBLIC_API_URL}

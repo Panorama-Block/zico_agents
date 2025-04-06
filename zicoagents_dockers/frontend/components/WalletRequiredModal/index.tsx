@@ -45,7 +45,7 @@ export const WalletRequiredModal: FC<WalletRequiredModal> = ({ agentRequiresWall
                 <ModalOverlay />
                 <ModalContent
                     sx={{
-                        backgroundColor: '#353936',
+                        backgroundColor: 'var(--background-primary)',
                         borderColor: '#313137',
                         color: 'white',
                         borderRadius: '8px',

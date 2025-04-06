@@ -406,7 +406,7 @@ export const Workflows: React.FC = () => {
 
       <Modal isOpen={isOpen} onClose={() => setIsOpen(false)} size="xl">
         <ModalOverlay />
-        <ModalContent bg="var(--background-primary)">
+        <ModalContent backgroundColor="var(--background-primary)">
           <ModalHeader color="white" textAlign="center">
             Workflows
           </ModalHeader>

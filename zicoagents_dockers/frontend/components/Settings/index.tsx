@@ -46,7 +46,7 @@ export const SettingsButton: React.FC = () => {
         isCentered
       >
         <ModalOverlay />
-        <ModalContent bg={bgColor}>
+        <ModalContent backgroundColor={bgColor}>
           <ModalHeader>Settings</ModalHeader>
           <ModalCloseButton />
           <ModalBody pb={6}>

@@ -12,6 +12,9 @@ RUN npm install -g npm@10 && npm install
 # Copy the rest of the application code
 COPY . .
 
+# Copy .env file
+COPY .env .env
+
 # Build the application
 RUN npm run build
 

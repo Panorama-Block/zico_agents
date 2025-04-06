@@ -30,7 +30,8 @@ services:
       - "${SSL_PORT:-443}:443"
     volumes:
       - ./frontend/.env:/usr/share/nginx/html/.env
-      - ${SSL_CERTS_PATH:-./certs}:/etc/nginx/certs
+      - ./frontend/nginx.conf:/etc/nginx/conf.d/default.conf
+      - /etc/letsencrypt:/etc/letsencrypt:ro
     environment:
       - ENVIRONMENT=${ENVIRONMENT:-development}
       - VIRTUAL_HOST=${VIRTUAL_HOST:-localhost}

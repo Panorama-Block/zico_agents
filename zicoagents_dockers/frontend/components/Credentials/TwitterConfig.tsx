@@ -25,6 +25,8 @@ interface TwitterConfigProps {
   onSave: () => void;
 }
 
+const BASE_URL = process.env.NEXT_PUBLIC_API_URL || 'localhost:8080'
+
 export const TwitterConfig: React.FC<TwitterConfigProps> = ({ onSave }) => {
   const [credentials, setCredentials] = useState<TwitterCredentials>({
     apiKey: "",
@@ -89,7 +91,7 @@ export const TwitterConfig: React.FC<TwitterConfigProps> = ({ onSave }) => {
 
     // Send to backend
     const backendClient = axios.create({
-      baseURL: "http://localhost:8080",
+      baseURL: `${BASE_URL}`,
     });
 
     try {

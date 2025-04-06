@@ -51,6 +51,7 @@ main() {
 
     echo -e "${GREEN}Configuring environment with $ENV_FILE...${NC}"
     cp "$ENV_FILE" .env
+    cp "$ENV_FILE" frontend/.env.local
     
     $CERT_FUNC
     

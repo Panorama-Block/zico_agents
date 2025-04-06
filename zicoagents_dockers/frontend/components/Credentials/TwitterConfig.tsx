@@ -109,7 +109,7 @@ export const TwitterConfig: React.FC<TwitterConfigProps> = ({ onSave }) => {
   return (
     <VStack spacing={6} align="stretch">
       <Box>
-        <Heading size="md" mb={2} color>
+        <Heading size="md" mb={2}>
           X API Configuration
         </Heading>
         <Text fontSize="sm" color={textColor}>

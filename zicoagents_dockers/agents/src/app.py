@@ -184,3 +184,6 @@ async def chat(chat_request: ChatRequest):
     except Exception as e:
         logger.error(f"Error in chat route: {str(e)}", exc_info=True)
         raise HTTPException(status_code=500, detail=str(e))
+
+if __name__ == "__main__":
+    uvicorn.run("src.app:app", host="0.0.0.0", port=5443)

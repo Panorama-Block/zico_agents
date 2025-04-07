@@ -49,5 +49,8 @@ ENV CHROMEDRIVER_BIN=/usr/bin/chromedriver
 COPY . .
 COPY .env .env
 
-# Expose both HTTP and HTTPS ports
-EXPOSE 5000 5443
+# Expose the HTTPS port
+EXPOSE 5443
+
+# Run the application using uvicorn with HTTPS
+CMD ["uvicorn", "src.app:app", "--host", "0.0.0.0", "--port", "5443", "--ssl-keyfile", "/app/ssl/privkey.pem", "--ssl-certfile", "/app/ssl/fullchain.pem", "--reload"]

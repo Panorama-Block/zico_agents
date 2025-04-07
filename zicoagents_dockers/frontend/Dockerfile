@@ -12,8 +12,17 @@ RUN npm install -g npm@10 && npm install
 # Copy the rest of the application code
 COPY . .
 
-# Copy .env file
-COPY .env .env
+# Set build arguments
+ARG NEXT_PUBLIC_API_URL
+ENV NEXT_PUBLIC_API_URL=${NEXT_PUBLIC_API_URL}
+
+# Ensure NEXT_PUBLIC_API_URL starts with https:// in production
+RUN if [[ "$NEXT_PUBLIC_API_URL" != http* ]]; then \
+      echo "NEXT_PUBLIC_API_URL=https://$NEXT_PUBLIC_API_URL" > .env; \
+    else \
+      echo "NEXT_PUBLIC_API_URL=$NEXT_PUBLIC_API_URL" > .env; \
+    fi && \
+    cat .env
 
 # Build the application
 RUN npm run build

@@ -186,4 +186,10 @@ async def chat(chat_request: ChatRequest):
         raise HTTPException(status_code=500, detail=str(e))
 
 if __name__ == "__main__":
-    uvicorn.run("src.app:app", host="0.0.0.0", port=5443)
+    uvicorn.run(
+        "src.app:app", 
+        host="0.0.0.0", 
+        port=8080, 
+        ssl_keyfile="/app/ssl/privkey.pem", 
+        ssl_certfile="/app/ssl/fullchain.pem"
+    )

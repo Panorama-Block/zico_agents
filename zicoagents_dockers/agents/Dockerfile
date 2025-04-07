@@ -51,5 +51,5 @@ COPY .env .env
 # Expose the port your application listens on
 EXPOSE 8080
 
-# Run the application using uvicorn with auto-reload enabled
-CMD ["uvicorn", "src.app:app", "--host", "0.0.0.0", "--port", "8080", "--reload"]
+# Run the application using uvicorn with SSL support
+CMD ["uvicorn", "src.app:app", "--host", "0.0.0.0", "--port", "8080", "--ssl-keyfile", "/app/ssl/privkey.pem", "--ssl-certfile", "/app/ssl/fullchain.pem"]

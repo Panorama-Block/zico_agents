@@ -187,8 +187,9 @@ async def chat(chat_request: ChatRequest):
 
 
 if __name__ == "__main__":
-    ssl_keyfile = "ssl/privkey.pem"
-    ssl_certfile = "ssl/fullchain.pem"
+    domain = "zico.panoramablock.com"
+    ssl_keyfile = f"/etc/letsencrypt/live/{domain}/privkey.pem"
+    ssl_certfile = f"/etc/letsencrypt/live/{domain}/fullchain.pem"
     
     if os.path.exists(ssl_keyfile) and os.path.exists(ssl_certfile):
         uvicorn.run(

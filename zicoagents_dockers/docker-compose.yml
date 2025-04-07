@@ -11,7 +11,7 @@ services:
     volumes:
       - agents_data:/var/lib/agents
       - ./agents/src:/app/src
-      - /etc/letsencrypt:/etc/letsencrypt:ro
+      - ./agents/ssl:/etc/nginx/certs:ro
     env_file:
       - .env
     environment:
@@ -34,7 +34,7 @@ services:
       - "${SSL_PORT:-443}:443"
     volumes:
       - ./frontend/nginx.conf:/etc/nginx/conf.d/default.conf
-      - /etc/letsencrypt:/etc/nginx/certs:ro
+      - ./frontend/ssl:/etc/nginx/certs:ro
     env_file:
       - .env
     networks:

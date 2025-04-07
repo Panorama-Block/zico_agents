@@ -187,8 +187,8 @@ async def chat(chat_request: ChatRequest):
 
 
 if __name__ == "__main__":
-    ssl_keyfile = "/etc/nginx/certs/privkey.pem"
-    ssl_certfile = "/etc/nginx/certs/fullchain.pem"
+    ssl_keyfile = "/app/ssl/privkey.pem"
+    ssl_certfile = "/app/ssl/fullchain.pem"
     
     if os.path.exists(ssl_keyfile) and os.path.exists(ssl_certfile):
         uvicorn.run(

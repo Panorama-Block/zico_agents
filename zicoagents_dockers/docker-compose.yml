@@ -11,7 +11,7 @@ services:
     volumes:
       - agents_data:/var/lib/agents
       - ./agents/src:/app/src
-      - ./agents/ssl:/etc/nginx/certs:ro
+      - ./agents/ssl:/app/ssl:ro
     env_file:
       - .env
     environment:

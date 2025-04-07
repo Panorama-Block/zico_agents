@@ -184,33 +184,3 @@ async def chat(chat_request: ChatRequest):
     except Exception as e:
         logger.error(f"Error in chat route: {str(e)}", exc_info=True)
         raise HTTPException(status_code=500, detail=str(e))
-
-
-if __name__ == "__main__":
-    ssl_keyfile = "/app/ssl/privkey.pem"
-    ssl_certfile = "/app/ssl/fullchain.pem"
-    
-    print(f"Checking SSL certificates:")
-    print(f"Current directory: {os.getcwd()}")
-    print(f"Directory contents of /app/ssl:")
-    try:
-        print(os.listdir("/app/ssl"))
-    except Exception as e:
-        print(f"Error listing /app/ssl: {e}")
-    
-    print(f"Key file: {ssl_keyfile} exists: {os.path.exists(ssl_keyfile)}")
-    print(f"Cert file: {ssl_certfile} exists: {os.path.exists(ssl_certfile)}")
-    
-    if os.path.exists(ssl_keyfile) and os.path.exists(ssl_certfile):
-        print("Starting server in HTTPS mode...")
-        uvicorn.run(
-            "src.app:app",
-            host="0.0.0.0",
-            port=5443,
-            ssl_keyfile=ssl_keyfile,
-            ssl_certfile=ssl_certfile,
-            reload=True
-        )
-    else:
-        print("SSL certificates not found, starting in HTTP mode...")
-        uvicorn.run("src.app:app", host="0.0.0.0", port=5000, reload=True)

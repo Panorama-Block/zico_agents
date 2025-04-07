@@ -51,6 +51,3 @@ COPY .env .env
 
 # Expose both HTTP and HTTPS ports
 EXPOSE 5000 5443
-
-# Run the application using uvicorn with auto-reload enabled
-CMD ["python3", "-m", "src.app"]

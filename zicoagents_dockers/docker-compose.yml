@@ -6,10 +6,12 @@ services:
       context: ./agents
     ports:
       - "8080:5000"
+      - "8443:5443"
     restart: always
     volumes:
       - agents_data:/var/lib/agents
       - ./agents/src:/app/src
+      - ./agents/ssl:/app/ssl:ro
     env_file:
       - .env
     environment:

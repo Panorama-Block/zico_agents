@@ -3,25 +3,19 @@ FROM --platform=linux/amd64 python:3.10-bullseye
 # Set the working directory in the container
 WORKDIR /app
 
-# Create SSL directory
-RUN mkdir -p /app/ssl && chmod 755 /app/ssl
-
 # Copy the requirements file first for better caching
 COPY requirements.txt .
 
-# Install system dependencies and limit compilation resources
-RUN apt-get update && \
-    apt-get install -y gcc g++ procps && \
-    # Install Python dependencies with limited parallel jobs
-    python3 -m pip install --no-cache-dir --upgrade pip && \
+RUN mkdir -p /app/ssl && chmod 755 /app/ssl
+
+# Install system dependencies
+RUN apt-get update && apt-get install -y gcc g++ procps && rm -rf /var/lib/apt/lists/*
+
+# Install Python dependencies
+RUN python3 -m pip install --no-cache-dir --upgrade pip && \
     python3 -m pip install --no-cache-dir --upgrade setuptools wheel && \
-    # Set environment variables to limit memory usage during compilation
-    export MAKEFLAGS="-j1" && \
-    export CMAKE_BUILD_PARALLEL_LEVEL=1 && \
     pip install -r requirements.txt --no-cache-dir --no-deps --ignore-installed && \
-    pip install -r requirements.txt --no-cache-dir && \
-    # Clean up apt cache
-    rm -rf /var/lib/apt/lists/*
+    pip install -r requirements.txt --no-cache-dir
 
 # Chrome installation for Debian Bullseye
 RUN apt-get update && apt-get install -y \
@@ -39,8 +33,7 @@ RUN apt-get update && apt-get install -y \
     libgbm1
 
 # Install ChromiumDriver instead of Chrome
-RUN apt-get install -y chromium chromium-driver && \
-    rm -rf /var/lib/apt/lists/*
+RUN apt-get install -y chromium chromium-driver
 
 # Set environment variables for Chrome
 ENV CHROME_BIN=/usr/bin/chromium
@@ -49,8 +42,8 @@ ENV CHROMEDRIVER_BIN=/usr/bin/chromedriver
 COPY . .
 COPY .env .env
 
-# Expose the HTTPS port
+# Expose the port your application listens on
 EXPOSE 8080
 
-# Run the application using uvicorn with HTTPS
-CMD ["uvicorn", "src.app:app", "--host", "0.0.0.0", "--port", "8080", "--ssl-keyfile", "/app/ssl/privkey.pem", "--ssl-certfile", "/app/ssl/fullchain.pem", "--reload"]
+# Run the application using uvicorn with auto-reload enabled
+CMD ["uvicorn", "src.app:app", "--host", "0.0.0.0", "--port", "8080", "--reload"]

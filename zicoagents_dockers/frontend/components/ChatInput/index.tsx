@@ -27,6 +27,8 @@ type ChatInputProps = {
   isSidebarOpen?: boolean;
 };
 
+const BASE_URL = process.env.NEXT_PUBLIC_API_URL || 'localhost:8080'
+
 export const ChatInput: FC<ChatInputProps> = ({
   onSubmit,
   disabled,
@@ -48,7 +50,7 @@ export const ChatInput: FC<ChatInputProps> = ({
   const commandsRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
-    fetch("http://localhost:8080/agents/commands")
+    fetch(`${BASE_URL}/agents/commands`)
       .then((res) => res.json())
       .then((data) => setCommands(data.commands))
       .catch((error) => console.error("Error fetching commands:", error));

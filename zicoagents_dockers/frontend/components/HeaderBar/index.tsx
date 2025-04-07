@@ -12,11 +12,24 @@ export const HeaderBar: FC = () => {
   const [walletType, setWalletType] = useState<"cdp" | "metamask">("cdp");
   const router = useRouter()
 
+  const handleBack = () => {
+    const referrer = document.referrer;
+    if (referrer && referrer.includes('panoramablock.com')) {
+      router.back();
+    } else {
+      window.location.href = 'https://www.panoramablock.com/pano-view/bitcoin';
+    }
+  };
+
   return (
     <Box className={classes.headerBar}>
       <HStack spacing={4} width="100%" px={4}>
         <Box >
-          <ArrowBackIcon color="gray.200" onClick={() => router.push("https://panorama.com")} />
+          <ArrowBackIcon 
+            color="gray.200" 
+            cursor="pointer" 
+            onClick={handleBack}
+          />
         </Box>
         <Box className={classes.logo} flexShrink={0}>
 

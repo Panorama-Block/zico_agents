@@ -33,7 +33,7 @@ Docker compose will build and run two containers. One will be for the agents, th
       docker compose -f docker-compose-apple.yml up
       ```
 
-Open in the browser: `http://localhost:3333/`
+Open in the browser: `http://localhost3000/`
 
 Docker build will download the model. The first time that one of the agents are called, the model will be loaded into memory and this instance will be shared between all agents.
 

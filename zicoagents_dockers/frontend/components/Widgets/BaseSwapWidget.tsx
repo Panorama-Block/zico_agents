@@ -22,6 +22,8 @@ interface SwapConfig {
   amount: number;
 }
 
+const BASE_URL = process.env.NEXT_PUBLIC_API_URL || 'localhost:8080'
+
 const BaseSwapWidget: React.FC = () => {
   const toast = useToast();
   const borderColor = useColorModeValue("gray.200", "gray.700");
@@ -73,7 +75,7 @@ const BaseSwapWidget: React.FC = () => {
     }
 
     try {
-      const response = await fetch("http://localhost:8080/base/swap", {
+      const response = await fetch(`${BASE_URL}/base/swap`, {
         method: "POST",
         headers: {
           "Content-Type": "application/json",

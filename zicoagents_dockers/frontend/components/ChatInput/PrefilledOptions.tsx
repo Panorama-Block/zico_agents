@@ -165,6 +165,8 @@ const prefilledOptionsMap: Record<string, PrefilledOption> = {
   },
 };
 
+const BASE_URL = process.env.NEXT_PUBLIC_API_URL || 'localhost:8080'
+
 const PrefilledOptions = ({
   onSelect,
   isWidgetOpen = false,
@@ -183,7 +185,7 @@ const PrefilledOptions = ({
   useEffect(() => {
     const fetchAgents = async () => {
       try {
-        const response = await fetch("http://localhost:8080/agents/available");
+        const response = await fetch(`${BASE_URL}/agents/available`);
         const data = await response.json();
         setSelectedAgents(data.selected_agents);
       } catch (error) {

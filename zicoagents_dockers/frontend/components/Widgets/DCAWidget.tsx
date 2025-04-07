@@ -39,6 +39,8 @@ interface DCAConfig {
   pauseOnVolatility: boolean;
 }
 
+const BASE_URL = process.env.NEXT_PUBLIC_API_URL || 'localhost:8080'
+
 const DCAWidget: React.FC = () => {
   const toast = useToast();
   const borderColor = useColorModeValue("gray.200", "gray.700");
@@ -93,7 +95,7 @@ const DCAWidget: React.FC = () => {
 
     try {
       const response = await fetch(
-        "http://localhost:8080/dca/create_strategy",
+        `${BASE_URL}/dca/create_strategy`,
         {
           method: "POST",
           headers: {

@@ -22,6 +22,8 @@ interface AgentSelectionProps {
   onSave: (agents: string[]) => void;
 }
 
+const BASE_URL = process.env.NEXT_PUBLIC_API_URL || 'localhost:8080'
+
 export const AgentSelection: React.FC<AgentSelectionProps> = ({ onSave }) => {
   const [availableAgents, setAvailableAgents] = useState<Agent[]>([]);
   const [selectedAgents, setSelectedAgents] = useState<string[]>([]);
@@ -29,12 +31,12 @@ export const AgentSelection: React.FC<AgentSelectionProps> = ({ onSave }) => {
   const toast = useToast();
 
   const borderColor = useColorModeValue("gray.200", "gray.700");
-  const textColor = useColorModeValue("gray.600", "gray.300");
+  const textColor = useColorModeValue("gray.500", "gray.300");
 
   useEffect(() => {
     const fetchAgents = async () => {
       try {
-        const response = await fetch("http://localhost:8080/agents/available");
+        const response = await fetch(`${BASE_URL}/agents/available`);
         const data = await response.json();
         setAvailableAgents(data.available_agents);
         setSelectedAgents(data.selected_agents);
@@ -73,7 +75,7 @@ export const AgentSelection: React.FC<AgentSelectionProps> = ({ onSave }) => {
 
   const handleSave = async () => {
     try {
-      const response = await fetch("http://localhost:8080/agents/selected", {
+      const response = await fetch(`${BASE_URL}/agents/selected`, {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
@@ -154,7 +156,10 @@ export const AgentSelection: React.FC<AgentSelectionProps> = ({ onSave }) => {
           </VStack>
         </Box>
 
-        <Button colorScheme="green" onClick={handleSave} size="md" width="100%">
+        <Button
+          style={{ backgroundColor: 'var(--background-secondary)', color: 'white' }}
+          onClick={handleSave}
+        >
           Save Configuration
         </Button>
       </Box>

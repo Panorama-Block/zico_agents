@@ -21,6 +21,8 @@ interface TransferConfig {
   destinationAddress: string;
 }
 
+const BASE_URL = process.env.NEXT_PUBLIC_API_URL || 'localhost:8080'
+
 const BaseTransferWidget: React.FC = () => {
   const toast = useToast();
   const borderColor = useColorModeValue("gray.200", "gray.700");
@@ -59,7 +61,7 @@ const BaseTransferWidget: React.FC = () => {
 
     // Attempt the transfer
     try {
-      const response = await fetch("http://localhost:8080/base/transfer", {
+      const response = await fetch(`${BASE_URL}/base/transfer`, {
         method: "POST",
         headers: {
           "Content-Type": "application/json",

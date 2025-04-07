@@ -21,6 +21,8 @@ interface OneInchConfigProps {
   onSave: () => void;
 }
 
+const BASE_URL = process.env.NEXT_PUBLIC_API_URL || 'localhost:8080'
+
 export const OneInchConfig: React.FC<OneInchConfigProps> = ({ onSave }) => {
   const [credentials, setCredentials] = useState<OneInchCredentials>({
     apiKey: "",
@@ -60,7 +62,7 @@ export const OneInchConfig: React.FC<OneInchConfigProps> = ({ onSave }) => {
 
     // Send to backend
     const backendClient = axios.create({
-      baseURL: "http://localhost:8080",
+      baseURL: `${BASE_URL}`,
     });
 
     try {

@@ -49,7 +49,10 @@ export const GeneralSettings: React.FC<GeneralSettingsProps> = ({ onSave }) => {
         />
       </FormControl>
 
-      <Button colorScheme="green" onClick={handleSave}>
+      <Button
+        style={{ backgroundColor: 'var(--background-secondary)', color: 'white' }}
+        onClick={handleSave}
+      >
         Save Settings
       </Button>
     </VStack>

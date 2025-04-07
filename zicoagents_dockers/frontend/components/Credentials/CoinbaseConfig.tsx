@@ -22,6 +22,8 @@ interface CoinbaseConfigProps {
   onSave: () => void;
 }
 
+const BASE_URL = process.env.NEXT_PUBLIC_API_URL || 'localhost:8080'
+
 export const CoinbaseConfig: React.FC<CoinbaseConfigProps> = ({ onSave }) => {
   const [credentials, setCredentials] = useState<CoinbaseCredentials>({
     cdpApiKey: "",
@@ -65,7 +67,7 @@ export const CoinbaseConfig: React.FC<CoinbaseConfigProps> = ({ onSave }) => {
 
     // Send to backend
     const backendClient = axios.create({
-      baseURL: "http://localhost:8080",
+      baseURL: `${BASE_URL}`,
     });
 
     try {

@@ -73,13 +73,12 @@ export const ApiCredentialsModal: React.FC<ApiCredentialsModalProps> = ({
         setSelectedApi(null);
         onClose();
       }}
-      bg="var(--background-primary)"
       size="xl"
       scrollBehavior="inside"
       isCentered
     >
       <ModalOverlay />
-      <ModalContent bg="var(--background-primary)" maxW={selectedApi ? "2xl" : "4xl"}>
+      <ModalContent sx={{ backgroundColor: 'var(--background-primary)' }} maxW={selectedApi ? "2xl" : "4xl"}>
         <ModalHeader>
           {selectedApi && (
             <Button

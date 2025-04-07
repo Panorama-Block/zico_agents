@@ -79,6 +79,8 @@ const FREQUENCIES = {
   monthly: 2592000,
 };
 
+const BASE_URL = process.env.NEXT_PUBLIC_API_URL || 'localhost:8080'
+
 export const Workflows: React.FC = () => {
   const [isOpen, setIsOpen] = useState(false);
   const [workflows, setWorkflows] = useState<Workflow[]>([]);
@@ -96,7 +98,7 @@ export const Workflows: React.FC = () => {
 
   const fetchWorkflows = useCallback(async () => {
     try {
-      const response = await fetch("http://localhost:8080/workflows/list");
+      const response = await fetch(`${BASE_URL}/workflows/list`);
       const data = await response.json();
       setWorkflows(data.workflows || []);
     } catch (error) {
@@ -144,7 +146,7 @@ export const Workflows: React.FC = () => {
         interval: FREQUENCIES[config.frequency as keyof typeof FREQUENCIES],
       };
 
-      const response = await fetch("http://localhost:8080/workflows/create", {
+      const response = await fetch(`${BASE_URL}/workflows/create`, {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
@@ -175,7 +177,7 @@ export const Workflows: React.FC = () => {
 
   const handleDeleteWorkflow = async (id: string) => {
     try {
-      const response = await fetch(`http://localhost:8080/workflows/${id}`, {
+      const response = await fetch(`${BASE_URL}/workflows/${id}`, {
         method: "DELETE",
       });
 
@@ -406,7 +408,7 @@ export const Workflows: React.FC = () => {
 
       <Modal isOpen={isOpen} onClose={() => setIsOpen(false)} size="xl">
         <ModalOverlay />
-        <ModalContent bg="var(--background-primary)">
+        <ModalContent backgroundColor="var(--background-primary)">
           <ModalHeader color="white" textAlign="center">
             Workflows
           </ModalHeader>

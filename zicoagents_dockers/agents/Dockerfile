@@ -3,6 +3,9 @@ FROM --platform=linux/amd64 python:3.10-bullseye
 # Set the working directory in the container
 WORKDIR /app
 
+# Create SSL directory
+RUN mkdir -p /app/ssl && chmod 755 /app/ssl
+
 # Copy the requirements file first for better caching
 COPY requirements.txt .
 
@@ -40,8 +43,8 @@ ENV CHROMEDRIVER_BIN=/usr/bin/chromedriver
 COPY . .
 COPY .env .env
 
-# Expose the port your application listens on
-EXPOSE 5000
+# Expose both HTTP and HTTPS ports
+EXPOSE 5000 5443
 
 # Run the application using uvicorn with auto-reload enabled
-CMD ["uvicorn", "src.app:app", "--host", "0.0.0.0", "--port", "5000", "--reload"]
+CMD ["python3", "-m", "src.app"]

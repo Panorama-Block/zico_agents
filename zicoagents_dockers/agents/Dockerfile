@@ -9,14 +9,26 @@ RUN mkdir -p /app/ssl && chmod 755 /app/ssl
 # Copy the requirements file first for better caching
 COPY requirements.txt .
 
-# Install system dependencies
-RUN apt-get update && apt-get install -y gcc g++ procps && rm -rf /var/lib/apt/lists/*
-
-# Install Python dependencies
-RUN python3 -m pip install --no-cache-dir --upgrade pip && \
+# Install system dependencies and setup swap
+RUN apt-get update && \
+    apt-get install -y gcc g++ procps && \
+    # Create a swap file
+    dd if=/dev/zero of=/swapfile bs=1M count=2048 && \
+    chmod 600 /swapfile && \
+    mkswap /swapfile && \
+    swapon /swapfile && \
+    # Install Python dependencies with limited parallel jobs
+    python3 -m pip install --no-cache-dir --upgrade pip && \
     python3 -m pip install --no-cache-dir --upgrade setuptools wheel && \
+    # Set environment variables to limit memory usage during compilation
+    export MAKEFLAGS="-j1" && \
     pip install -r requirements.txt --no-cache-dir --no-deps --ignore-installed && \
-    pip install -r requirements.txt --no-cache-dir
+    pip install -r requirements.txt --no-cache-dir && \
+    # Clean up swap file
+    swapoff /swapfile && \
+    rm /swapfile && \
+    # Clean up apt cache
+    rm -rf /var/lib/apt/lists/*
 
 # Chrome installation for Debian Bullseye
 RUN apt-get update && apt-get install -y \
@@ -34,7 +46,8 @@ RUN apt-get update && apt-get install -y \
     libgbm1
 
 # Install ChromiumDriver instead of Chrome
-RUN apt-get install -y chromium chromium-driver
+RUN apt-get install -y chromium chromium-driver && \
+    rm -rf /var/lib/apt/lists/*
 
 # Set environment variables for Chrome
 ENV CHROME_BIN=/usr/bin/chromium

@@ -13,10 +13,10 @@ COPY requirements.txt .
 RUN apt-get update && apt-get install -y gcc g++ procps && rm -rf /var/lib/apt/lists/*
 
 # Install Python dependencies
-RUN python3 -m pip install --upgrade pip && \
-    python3 -m pip install --upgrade setuptools wheel && \
-    pip install -r requirements.txt --no-deps --ignore-installed && \
-    pip install -r requirements.txt
+RUN python3 -m pip install --no-cache-dir --upgrade pip && \
+    python3 -m pip install --no-cache-dir --upgrade setuptools wheel && \
+    pip install -r requirements.txt --no-cache-dir --no-deps --ignore-installed && \
+    pip install -r requirements.txt --no-cache-dir
 
 # Chrome installation for Debian Bullseye
 RUN apt-get update && apt-get install -y \

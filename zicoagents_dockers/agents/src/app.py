@@ -204,7 +204,7 @@ if __name__ == "__main__":
     if os.path.exists(ssl_keyfile) and os.path.exists(ssl_certfile):
         print("Starting server in HTTPS mode...")
         uvicorn.run(
-            app,
+            "src.app:app",
             host="0.0.0.0",
             port=5443,
             ssl_keyfile=ssl_keyfile,
@@ -213,4 +213,4 @@ if __name__ == "__main__":
         )
     else:
         print("SSL certificates not found, starting in HTTP mode...")
-        uvicorn.run(app, host="0.0.0.0", port=5000, reload=True)
+        uvicorn.run("src.app:app", host="0.0.0.0", port=5000, reload=True)

@@ -18,6 +18,10 @@ create_ssl_dirs() {
         mkdir -p agents/ssl
     fi
     
+    echo -e "${GREEN}Verifying SSL directories...${NC}"
+    ls -la frontend/ssl/
+    ls -la agents/ssl/
+    
     mkdir -p frontend/ssl agents/ssl
     chmod 755 frontend/ssl agents/ssl
 }

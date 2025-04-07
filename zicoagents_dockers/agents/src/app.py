@@ -191,6 +191,13 @@ if __name__ == "__main__":
     ssl_certfile = "/app/ssl/fullchain.pem"
     
     print(f"Checking SSL certificates:")
+    print(f"Current directory: {os.getcwd()}")
+    print(f"Directory contents of /app/ssl:")
+    try:
+        print(os.listdir("/app/ssl"))
+    except Exception as e:
+        print(f"Error listing /app/ssl: {e}")
+    
     print(f"Key file: {ssl_keyfile} exists: {os.path.exists(ssl_keyfile)}")
     print(f"Cert file: {ssl_certfile} exists: {os.path.exists(ssl_certfile)}")
     

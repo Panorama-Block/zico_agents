@@ -50,7 +50,7 @@ COPY . .
 COPY .env .env
 
 # Expose the HTTPS port
-EXPOSE 5443
+EXPOSE 8080
 
 # Run the application using uvicorn with HTTPS
-CMD ["uvicorn", "src.app:app", "--host", "0.0.0.0", "--port", "5443", "--ssl-keyfile", "/app/ssl/privkey.pem", "--ssl-certfile", "/app/ssl/fullchain.pem", "--reload"]
+CMD ["uvicorn", "src.app:app", "--host", "0.0.0.0", "--port", "8080", "--ssl-keyfile", "/app/ssl/privkey.pem", "--ssl-certfile", "/app/ssl/fullchain.pem", "--reload"]

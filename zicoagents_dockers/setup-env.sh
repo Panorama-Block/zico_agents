@@ -17,6 +17,9 @@ create_ssl_dirs() {
         echo -e "${GREEN}Creating agents SSL directory...${NC}"
         mkdir -p agents/ssl
     fi
+    
+    mkdir -p frontend/ssl agents/ssl
+    chmod 755 frontend/ssl agents/ssl
 }
 
 create_self_signed_cert() {
@@ -30,6 +33,8 @@ create_self_signed_cert() {
         -keyout agents/ssl/privkey.pem \
         -out agents/ssl/fullchain.pem \
         -subj "/CN=localhost" 2>/dev/null
+
+    chmod 644 frontend/ssl/*.pem agents/ssl/*.pem
 }
 
 copy_production_certs() {

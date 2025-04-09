@@ -8,6 +8,7 @@ import {
   CoinbaseCredentials,
   OneInchCredentials,
 } from "./types";
+import { getUserId } from "./userHooks";
 
 export const getChats = async () => {
   const chats = localStorage.getItem("chats");
@@ -119,9 +120,11 @@ export const getMessagesHistory = async (
   backendClient: Axios,
   conversationId: string = "default"
 ): Promise<ChatMessage[]> => {
+  const userId = getUserId();
   const responseBody = await backendClient.get("/chat/messages", {
     params: {
       conversation_id: conversationId,
+      user_id: userId,
     },
   });
 
@@ -144,9 +147,11 @@ export const clearMessagesHistory = async (
   conversationId: string = "default"
 ): Promise<void> => {
   try {
+    const userId = getUserId();
     await backendClient.get("/chat/clear", {
       params: {
         conversation_id: conversationId,
+        user_id: userId,
       },
     });
   } catch (error) {
@@ -163,6 +168,7 @@ export const writeMessage = async (
   address: string,
   conversationId: string = "default"
 ) => {
+  const userId = getUserId();
   const newMessage: UserMessage = {
     role: "user",
     content: message,
@@ -179,6 +185,7 @@ export const writeMessage = async (
       chain_id: String(chainId),
       wallet_address: address,
       conversation_id: conversationId,
+      user_id: userId,
     });
   } catch (e) {
     console.error(e);
@@ -190,7 +197,10 @@ export const writeMessage = async (
 export const createNewConversation = async (
   backendClient: Axios
 ): Promise<string> => {
-  const response = await backendClient.post("/chat/conversations");
+  const userId = getUserId();
+  const response = await backendClient.post("/chat/conversations", {
+    user_id: userId,
+  });
   return response.data.conversation_id;
 };
 
@@ -198,7 +208,13 @@ export const deleteConversation = async (
   backendClient: Axios,
   conversationId: string
 ): Promise<void> => {
-  await backendClient.delete(`/chat/conversations/${conversationId}`);
+  const userId = getUserId();
+
+  await backendClient.delete(`/chat/conversations/${conversationId}`, {
+    params: {
+      user_id: userId,
+    },
+  });
 };
 
 export const postTweet = async (

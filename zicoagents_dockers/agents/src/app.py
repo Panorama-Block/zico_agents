@@ -129,7 +129,7 @@ async def startup_event():
 @app.post("/chat")
 async def chat(chat_request: ChatRequest):
     """Handle chat requests and delegate to appropriate agent"""
-    logger.info(f"Received chat request for conversation {chat_request.conversation_id}")
+    logger.info(f"Received chat request for conversation {chat_request.conversation_id} from user {chat_request.user_id}")
 
     try:
         # Parse command if present
@@ -142,7 +142,7 @@ async def chat(chat_request: ChatRequest):
             agent_manager_instance.clear_active_agent()
 
         # Add user message to chat history
-        chat_manager_instance.add_message(chat_request.prompt.dict(), chat_request.conversation_id)
+        chat_manager_instance.add_message(chat_request.prompt.dict(), chat_request.conversation_id, chat_request.user_id)
 
         # If command was parsed, use that agent directly
         if agent_name:
@@ -168,7 +168,7 @@ async def chat(chat_request: ChatRequest):
             raise HTTPException(status_code=500, detail="Agent returned invalid response type")
 
         # Convert to API response and add to chat history
-        chat_manager_instance.add_response(agent_response.dict(), current_agent, chat_request.conversation_id)
+        chat_manager_instance.add_response(agent_response.dict(), current_agent, chat_request.conversation_id, chat_request.user_id)
 
         logger.info(f"Sending response: {agent_response.dict()}")
         return agent_response.dict()

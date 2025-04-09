@@ -2,7 +2,7 @@ import time
 from enum import Enum
 from typing import List, Optional, Dict, Any
 from fastapi import Query
-from pydantic import BaseModel, Field
+from pydantic import BaseModel
 
 
 class ResponseType(Enum):
@@ -44,6 +44,7 @@ class ChatRequest(BaseModel):
     chain_id: str
     wallet_address: str
     conversation_id: str = Query(default="default")
+    user_id: str = Query(default="anonymous")
 
 
 class Conversation(BaseModel):

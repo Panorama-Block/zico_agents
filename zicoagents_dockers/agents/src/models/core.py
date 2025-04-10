@@ -44,6 +44,7 @@ class ChatRequest(BaseModel):
     chain_id: str
     wallet_address: str
     conversation_id: str = Query(default="default")
+    user_id: str = Query(default="anonymous")
 
 
 class Conversation(BaseModel):

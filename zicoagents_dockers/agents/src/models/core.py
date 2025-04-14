@@ -2,7 +2,7 @@ import time
 from enum import Enum
 from typing import List, Optional, Dict, Any
 from fastapi import Query
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
 
 class ResponseType(Enum):

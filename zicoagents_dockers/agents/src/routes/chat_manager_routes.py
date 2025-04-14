@@ -25,8 +25,23 @@ async def clear_messages(conversation_id: str = Query(default="default"), user_i
 
 
 @router.get("/conversations")
-async def get_conversations(user_id: str = Query(default="anonymous")):
+async def get_conversations(
+    user_id_query: str = Query(default=None, alias="user_id"),
+    user_id_body: Optional[UserIdRequest] = None,
+    user_id_str: Optional[str] = Body(default=None)
+):
     """Get all conversation IDs for a specific user"""
+    user_id = None
+    if user_id_body:
+        user_id = user_id_body.user_id
+    elif user_id_str:
+        user_id = user_id_str
+    else:
+        user_id = user_id_query
+
+    if not user_id:
+        user_id = "anonymous"
+        
     logger.info(f"Getting all conversation IDs for user {user_id}")
     return {"conversation_ids": chat_manager_instance.get_all_conversation_ids(user_id)}
 

@@ -77,21 +77,14 @@ async def create_conversation(
 async def delete_conversation(
     conversation_id: str,
     user_id_query: str = Query(default=None, alias="user_id"),
-    user_id_body: Optional[UserIdRequest] = None,
     user_id_str: Optional[str] = Body(default=None)
 ):
-    """Delete a conversation for a specific user"""
-    user_id = None
-    if user_id_body:
-        user_id = user_id_body.user_id
-    elif user_id_str:
-        user_id = user_id_str
-    else:
-        user_id = user_id_query
+    """Delete a conversation by ID"""
+    user_id = user_id_str if user_id_str else user_id_query
 
     if not user_id:
         user_id = "anonymous"
         
     logger.info(f"Deleting conversation {conversation_id} for user {user_id}")
     chat_manager_instance.delete_conversation(conversation_id, user_id)
-    return {"status": "success"}
+    return {"response": "successfully deleted conversation"}

@@ -9,33 +9,46 @@ ORIGINAL_GROUP=$(stat -c '%G' .)
 DOMAIN="zico.panoramablock.com"
 
 create_ssl_dirs() {
+    if [ ! -d "frontend/ssl" ]; then
+        echo -e "${GREEN}Creating frontend SSL directory...${NC}"
+        mkdir -p frontend/ssl
+    fi
     if [ ! -d "agents/ssl" ]; then
         echo -e "${GREEN}Creating agents SSL directory...${NC}"
         mkdir -p agents/ssl
     fi
     
     echo -e "${GREEN}Verifying SSL directories...${NC}"
+    ls -la frontend/ssl/
     ls -la agents/ssl/
     
-    mkdir -p agents/ssl
-    chmod 755 agents/ssl
+    mkdir -p frontend/ssl agents/ssl
+    chmod 755 frontend/ssl agents/ssl
 }
 
 create_self_signed_cert() {
     echo -e "${GREEN}Generating self-signed certificates...${NC}"
     create_ssl_dirs
     openssl req -x509 -nodes -days 365 -newkey rsa:2048 \
+        -keyout frontend/ssl/privkey.pem \
+        -out frontend/ssl/fullchain.pem \
+        -subj "/CN=localhost" 2>/dev/null
+    openssl req -x509 -nodes -days 365 -newkey rsa:2048 \
         -keyout agents/ssl/privkey.pem \
         -out agents/ssl/fullchain.pem \
         -subj "/CN=localhost" 2>/dev/null
 
-    chmod 644 agents/ssl/*.pem
+    chmod 644 frontend/ssl/*.pem agents/ssl/*.pem
 }
 
 copy_production_certs() {
     echo -e "${GREEN}Copying production certificates...${NC}"
     create_ssl_dirs
     if [ -f "/etc/letsencrypt/live/$DOMAIN/fullchain.pem" ]; then
+        cp /etc/letsencrypt/live/$DOMAIN/fullchain.pem frontend/ssl/
+        cp /etc/letsencrypt/live/$DOMAIN/privkey.pem frontend/ssl/
+        chmod 644 frontend/ssl/*
+        
         cp /etc/letsencrypt/live/$DOMAIN/fullchain.pem agents/ssl/
         cp /etc/letsencrypt/live/$DOMAIN/privkey.pem agents/ssl/
         chmod 644 agents/ssl/*
@@ -62,6 +75,7 @@ main() {
 
     echo -e "${GREEN}Configuring environment with $ENV_FILE...${NC}"
     cp "$ENV_FILE" .env
+    cp "$ENV_FILE" frontend/.env
     
     $CERT_FUNC
     

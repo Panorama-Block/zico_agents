@@ -2,6 +2,7 @@ import logging
 from fastapi import APIRouter, Query, Body
 from src.stores import chat_manager_instance
 from typing import Optional
+from pydantic import BaseModel
 
 logger = logging.getLogger(__name__)
 
@@ -37,22 +38,31 @@ async def get_users():
     return {"user_ids": chat_manager_instance.get_all_user_ids()}
 
 
+class UserIdRequest(BaseModel):
+    user_id: str
+
+
 @router.post("/conversations")
 async def create_conversation(
     user_id_query: str = Query(default=None, alias="user_id"),
-    user_id_body: Optional[str] = Body(default=None, alias="user_id")
+    user_id_body: Optional[UserIdRequest] = None,
+    user_id_str: Optional[str] = Body(default=None)
 ):
     """Create a new conversation for a specific user"""
-    # Priorizar o user_id do body se estiver presente, caso contrário usar o da query
-    user_id = user_id_body if user_id_body is not None else user_id_query
-    if user_id is None:
+    user_id = None
+    if user_id_body:
+        user_id = user_id_body.user_id
+    elif user_id_str:
+        user_id = user_id_str
+    else:
+        user_id = user_id_query
+
+    if not user_id:
         user_id = "anonymous"
-    
-    existing_conversations = chat_manager_instance.get_all_conversation_ids(user_id)
-    new_id = f"conversation_{len(existing_conversations)}"
-    conversation = chat_manager_instance.create_conversation(new_id, user_id)
-    logger.info(f"Created new conversation with ID: {new_id} for user {user_id}")
-    return {"conversation_id": new_id, "conversation": conversation}
+        
+    logger.info(f"Creating new conversation for user {user_id}")
+    conversation_id = chat_manager_instance.create_conversation(user_id)
+    return {"conversation_id": conversation_id}
 
 
 @router.delete("/conversations/{conversation_id}")

@@ -222,20 +222,31 @@ class ChatManager:
             del self.user_conversations[user_id][conversation_id]
             logger.info(f"Deleted conversation {conversation_id} for user {user_id}")
 
-    def create_conversation(self, conversation_id: Optional[str] = None, user_id: Optional[str] = None) -> Dict:
+    def create_conversation(self, user_id: Optional[str] = None) -> str:
         """
-        Create a new conversation with the given ID.
+        Create a new conversation for a user.
 
         Args:
-            conversation_id (str, optional): ID for new conversation. Defaults to "default"
             user_id (str, optional): User identifier. Defaults to "anonymous"
 
         Returns:
-            Dict: Created conversation as dictionary
+            str: ID of the created conversation
         """
         user_id = self._get_user_id(user_id)
-        conversation = self._get_or_create_conversation(self._get_conversation_id(conversation_id), user_id)
-        return conversation.dict()
+        self._initialize_user(user_id)
+        
+        # Generate a unique conversation ID
+        conversation_id = f"conversation_{len(self.user_conversations[user_id])}"
+        while conversation_id in self.user_conversations[user_id]:
+            conversation_id = f"conversation_{len(self.user_conversations[user_id])}_{int(time.time())}"
+        
+        # Create new conversation with default message
+        self.user_conversations[user_id][conversation_id] = Conversation(
+            messages=[self.default_message],
+            has_uploaded_file=False
+        )
+        logger.info(f"Created new conversation {conversation_id} for user {user_id}")
+        return conversation_id
 
     def _get_or_create_conversation(self, conversation_id: str, user_id: str) -> Conversation:
         """

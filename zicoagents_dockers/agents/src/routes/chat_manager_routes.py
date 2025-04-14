@@ -3,6 +3,7 @@ from fastapi import APIRouter, Query, Body
 from src.stores import chat_manager_instance
 from typing import Optional
 from pydantic import BaseModel
+from typing import Dict
 
 logger = logging.getLogger(__name__)
 
@@ -77,10 +78,11 @@ async def create_conversation(
 async def delete_conversation(
     conversation_id: str,
     user_id_query: str = Query(default=None, alias="user_id"),
-    user_id_str: Optional[str] = Body(default=None)
+    user_id_body: Dict[str, str] = Body(default=None)
 ):
     """Delete a conversation by ID"""
-    user_id = user_id_str if user_id_str else user_id_query
+    # Get user_id from body if it exists, otherwise from query
+    user_id = user_id_body.get("user_id") if user_id_body else user_id_query
 
     if not user_id:
         user_id = "anonymous"

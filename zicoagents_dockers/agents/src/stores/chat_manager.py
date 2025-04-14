@@ -218,7 +218,11 @@ class ChatManager:
         """
         user_id = self._get_user_id(user_id)
         conversation_id = self._get_conversation_id(conversation_id)
-        if user_id in self.user_conversations and conversation_id in self.user_conversations[user_id]:
+        
+        # Initialize the user if they don't exist
+        self._initialize_user(user_id)
+        
+        if conversation_id in self.user_conversations[user_id]:
             del self.user_conversations[user_id][conversation_id]
             logger.info(f"Deleted conversation {conversation_id} for user {user_id}")
 

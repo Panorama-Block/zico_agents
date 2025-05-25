@@ -8,47 +8,68 @@ import {FeeOnTransferToken} from "./mocks/FeeOnTransferToken.sol";
 
 contract RestakingTest is Test {
     address public constant DEAD = 0x000000000000000000000000000000000000dEaD;
-    
+
     uint256 public alicePrivateKey;
     uint256 public bobPrivateKey;
     address public alice;
     address public bob;
-    
+
     SuzakuRestaking public restakingToken;
     MockERC20 public token;
     FeeOnTransferToken public feeOnTransferToken;
-    
+
+    mapping(string => MockERC20) public collaterals;
+
     function setUp() public {
         alicePrivateKey = 0xA11CE;
         bobPrivateKey = 0xB0B;
         alice = vm.addr(alicePrivateKey);
         bob = vm.addr(bobPrivateKey);
-        
-        // Deploy tokens
+
         token = new MockERC20("Test Token", "TST");
         feeOnTransferToken = new FeeOnTransferToken("Fee Token");
-        
-        // Deploy restaking contract
+
         restakingToken = new SuzakuRestaking(address(token));
-        
-        // Transfer tokens to test accounts
+
         token.transfer(alice, 1000 * 1e18);
         token.transfer(bob, 1000 * 1e18);
         feeOnTransferToken.transfer(alice, 1000 * 1e18);
         feeOnTransferToken.transfer(bob, 1000 * 1e18);
-        
-        // Approve tokens
+
         vm.startPrank(alice);
         token.approve(address(restakingToken), type(uint256).max);
         feeOnTransferToken.approve(address(restakingToken), type(uint256).max);
         vm.stopPrank();
-        
+
         vm.startPrank(bob);
         token.approve(address(restakingToken), type(uint256).max);
         feeOnTransferToken.approve(address(restakingToken), type(uint256).max);
         vm.stopPrank();
+
+        _setupCollateral("sAVAX", 0xE3C983013B8c5830D866F550a28fD7Ed4393d5B7);
+        _setupCollateral("BTC.b", 0x203E9101e09dc87ce391542E705a07522d19dF0d);
+        _setupCollateral("AUSD",  0xa53E127Bfd9C4d0310858D9D5Fcdf1D2617d4C41);
+        _setupCollateral("SolvBTC", 0x1D8bd363922465246A91B7699e7B32BAbf5FEF62);
+        _setupCollateral("COQ", 0x8F1dea444380A2DDC5e6669f508d235401CaEE5F);
+        _setupCollateral("ggAVAX", 0x0CEc099933F0Da490DFF91724b02e2203FAAf9Af);
     }
-    
+
+    function _setupCollateral(string memory name, address) internal {
+        MockERC20 mock = new MockERC20(string.concat("Collateral ", name), name);
+        collaterals[name] = mock;
+
+        mock.transfer(alice, 1000 * 1e18);
+        mock.transfer(bob, 1000 * 1e18);
+
+        vm.startPrank(alice);
+        mock.approve(address(restakingToken), type(uint256).max);
+        vm.stopPrank();
+
+        vm.startPrank(bob);
+        mock.approve(address(restakingToken), type(uint256).max);
+        vm.stopPrank();
+    }
+
     function test_InitialDeposit(uint256 amount) public {
         amount = bound(amount, 1e18, 100 * 1e18);
         
@@ -203,4 +224,4 @@ contract RestakingTest is Test {
         restakingToken.restake();
         vm.stopPrank();
     }
-} 
+}

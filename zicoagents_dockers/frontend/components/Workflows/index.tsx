@@ -55,9 +55,9 @@ interface Workflow {
 
 const tokens = [
   { symbol: "USDC", name: "USD Coin" },
-  { symbol: "WETH", name: "Wrapped Ethereum" },
+  { symbol: "WAVAX", name: "Wrapped AVAX" },
   { symbol: "WBTC", name: "Wrapped Bitcoin" },
-  { symbol: "CBETH", name: "Coinbase Wrapped Staked ETH" },
+  { symbol: "SAVAX", name: "Staked AVAX" },
   { symbol: "DAI", name: "Dai Stablecoin" },
 ];
 
@@ -79,7 +79,7 @@ const FREQUENCIES = {
   monthly: 2592000,
 };
 
-const BASE_URL = process.env.NEXT_PUBLIC_API_URL || 'localhost:8080'
+const BASE_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8080'
 
 export const Workflows: React.FC = () => {
   const [isOpen, setIsOpen] = useState(false);
@@ -89,7 +89,7 @@ export const Workflows: React.FC = () => {
 
   const [config, setConfig] = useState({
     originToken: "USDC",
-    destinationToken: "WETH",
+    destinationToken: "WAVAX",
     stepSize: "100",
     frequency: "weekly",
     priceThreshold: "",

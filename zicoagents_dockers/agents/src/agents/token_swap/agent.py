@@ -28,6 +28,7 @@ class TokenSwapAgent(AgentCore):
         self.tools_provided = tools.get_tools()
         self.tool_bound_llm = self.llm.bind_tools(self.tools_provided)
         self.context = TokenSwapContext()
+        self.conversation_state = {}
 
     def _api_request_url(self, method_name, query_params, chain_id):
         base_url = self.config.APIBASEURL + str(chain_id)
@@ -67,6 +68,38 @@ class TokenSwapAgent(AgentCore):
             # Store request context
             self.context.chain_id = request.chain_id
             self.context.wallet_address = request.wallet_address
+            
+            wallet_address = request.wallet_address
+
+            # Initialize conversation state if needed
+            if wallet_address not in self.conversation_state:
+                self.conversation_state[wallet_address] = {"state": "initial"}
+
+            state = self.conversation_state[wallet_address]["state"]
+
+            # Handle confirmation state
+            if state == "awaiting_confirmation":
+                user_input = request.prompt.content.lower()
+                if any(word in user_input for word in ["yes", "proceed", "confirm", "swap"]):
+                    # User confirmed, return the stored swap transaction
+                    swap_result = self.conversation_state[wallet_address]["pending_swap"]
+                    # Reset state
+                    self.conversation_state[wallet_address]["state"] = "initial"
+                    return AgentResponse.action_required(
+                        content="Swap confirmed! Please complete the transaction in your wallet.",
+                        action_type="swap",
+                        metadata=swap_result,
+                    )
+                elif any(word in user_input for word in ["no", "cancel", "abort"]):
+                    # User cancelled
+                    self.conversation_state[wallet_address]["state"] = "initial"
+                    return AgentResponse.success(
+                        content="Swap cancelled. Is there anything else I can help you with?"
+                    )
+                else:
+                    return AgentResponse.needs_info(
+                        content="Please confirm if you want to proceed with the swap by saying 'yes', 'proceed', 'confirm', or 'swap'. You can also say 'no' or 'cancel' to abort."
+                    )
 
             messages = [
                 SystemMessage(
@@ -112,11 +145,17 @@ class TokenSwapAgent(AgentCore):
                         self.context.wallet_address,
                     )
 
-                    # Return an action_required response with swap details
-                    return AgentResponse.action_required(
-                        content="Please review and confirm your swap transaction:",
-                        action_type="swap",
-                        metadata=swap_result,
+                    # Store the swap result and set state to awaiting confirmation
+                    wallet_address = self.context.wallet_address
+                    self.conversation_state[wallet_address]["pending_swap"] = swap_result
+                    self.conversation_state[wallet_address]["state"] = "awaiting_confirmation"
+
+                    # Return a confirmation request instead of action_required
+                    return AgentResponse.success(
+                        content=f"Please review and confirm your swap transaction:\n\n"
+                                f"• Swapping {args['value']} {args['token1']} for {args['token2']}\n"
+                                f"• Estimated output: {swap_result.get('dst_amount', 'N/A')} {args['token2']}\n\n"
+                                f"Do you want to proceed with this swap?"
                     )
                 except (tools.InsufficientFundsError, tools.TokenNotFoundError, tools.SwapNotPossibleError) as e:
                     return AgentResponse.needs_info(content=str(e))

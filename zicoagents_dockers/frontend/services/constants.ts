@@ -1,7 +1,7 @@
 import axios from "axios";
 import { getAvailableAgents } from "@/services/apiHooks";
 
-export const BASE_URL = process.env.NEXT_PUBLIC_API_URL || 'localhost:8080'
+export const BASE_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8080'
 
 export const getHttpClient = () => {
   return axios.create({

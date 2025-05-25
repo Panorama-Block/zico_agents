@@ -46,6 +46,12 @@ const API_OPTIONS: ApiOption[] = [
     logo: "/images/one-inch-logo.png",
     component: OneInchConfig,
   },
+  {
+    id: "avalanche",
+    name: "Avalanche API",
+    logo: "/assets/avalanche-avax-logo.svg",
+    component: OneInchConfig, // Temporarily using OneInchConfig, you can create AvaxConfig later
+  },
 ];
 
 interface ApiCredentialsModalProps {

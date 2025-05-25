@@ -55,16 +55,13 @@ class Config:
                 "command": "crypto",
                 "upload_required": False,
             },
-            # TODO: Pending fix to swap agent. The swap agent's preview is often correct however the metamask preview is wrong.
-            # {
-            #     "path": "src.agents.token_swap.agent",
-            #     "class": "TokenSwapAgent",
-            #     "description": "Handles cryptocurrency swapping operations. Use when the query explicitly mentions swapping, exchanging, or converting one cryptocurrency to another.",
-            #     "name": "token swap",
-            #     "human_readable_name": "Token Swap Manager",
-            #     "command": "swap",
-            #     "upload_required": False,
-            # },
+            {
+                "path": "src.agents.token_swap.agent",
+                "class": "TokenSwapAgent",
+                "description": "Swap tokens using 1inch API",
+                "name": "Token Swap Agent",
+                "upload_required": False,
+            },
             {
                 "path": "src.agents.tweet_sizzler.agent",
                 "class": "TweetSizzlerAgent",
@@ -92,15 +89,12 @@ class Config:
                 "command": "document",
                 "upload_required": True,
             },
-            # DISABLED:
-            #
-            # {
-            #     "path": "src.agents.mor_claims.agent",
-            #     "class": "MorClaimsAgent",
-            #     "description": "Manages the process of claiming rewards or tokens, specifically MOR rewards. Use when the query explicitly mentions claiming rewards or tokens.",
-            #     "name": "mor claims",
-            #     "upload_required": False,
-            # },
+            {
+                "path": "src.agents.mor_claims.agent",
+                "class": "MorClaimsAgent",
+                "description": "Claim MOR tokens",
+                "name": "MOR Claims Agent",
+            },
             {
                 "path": "src.agents.mor_rewards.agent",
                 "class": "MorRewardsAgent",
@@ -119,16 +113,6 @@ class Config:
                 "command": "search",
                 "upload_required": False,
             },
-            # TODO: Pending fix to RSS feed. The RSS feed finds very irrelevant news right now.
-            # {
-            #     "path": "src.agents.news_agent.agent",
-            #     "class": "NewsAgent",
-            #     "description": "Fetches and analyzes cryptocurrency news for potential price impacts.",
-            #     "name": "crypto news",
-            #     "human_readable_name": "Crypto News Analyst",
-            #     "command": "news",
-            #     "upload_required": False,
-            # },
             {
                 "path": "src.agents.dexscreener.agent",
                 "class": "DexScreenerAgent",

@@ -49,6 +49,8 @@ const NETWORKS = [
   "ethereum-mainnet",
   "ethereum-goerli",
   "ethereum-sepolia",
+  "avax-mainnet",
+  "avax-fuji",
 ];
 
 interface Wallet {

@@ -168,6 +168,8 @@ contract SuzakuRestaking is Factory {
     function getStakeInfo(address _user) external view returns (
         uint256 amount,
         uint256 startTime,
+        uint256 lastRewardCalculation,
+        bool isStaking,
         uint256 restakeCount,
         uint256 totalRestaked
     ) {
@@ -175,6 +177,8 @@ contract SuzakuRestaking is Factory {
         return (
             userStake.amount,
             userStake.startTime,
+            userStake.lastRewardCalculation,
+            userStake.isStaking,
             userStake.restakeCount,
             userStake.totalRestaked
         );

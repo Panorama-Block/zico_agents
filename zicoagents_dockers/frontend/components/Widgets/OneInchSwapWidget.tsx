@@ -34,7 +34,7 @@ const OneInchSwapWidget: FC<OneInchSwapWidgetProps> = ({ metadata = {} }) => {
   const [slippage, setSlippage] = React.useState(0.1);
 
   // Default values for metadata fields
-  const src = metadata.src || "ETH";
+  const src = metadata.src || "AVAX";
   const dst = metadata.dst || "USDC";
   const srcAmount = metadata.src_amount || 0;
   const dstAmount = metadata.dst_amount || 0;

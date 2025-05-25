@@ -79,7 +79,7 @@ const FREQUENCIES = {
   monthly: 2592000,
 };
 
-const BASE_URL = process.env.NEXT_PUBLIC_API_URL || 'localhost:8080'
+const BASE_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8080'
 
 export const Workflows: React.FC = () => {
   const [isOpen, setIsOpen] = useState(false);

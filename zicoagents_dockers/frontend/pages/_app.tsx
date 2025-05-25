@@ -8,6 +8,8 @@ import { WagmiProvider } from 'wagmi';
 import {
   arbitrum,
   base,
+  avalanche,
+  avalancheFuji,
   mainnet,
   optimism,
   polygon,
@@ -21,6 +23,8 @@ const config = getDefaultConfig({
   appName: 'RainbowKit App',
   projectId: 'YOUR_PROJECT_ID',
   chains: [
+    avalanche,
+    avalancheFuji,
     mainnet,
     polygon,
     optimism,

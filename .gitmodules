@@ -1,0 +1,9 @@
+[submodule "avax_chainlink/lib/chainlink-brownie-contracts"]
+	path = avax_chainlink/lib/chainlink-brownie-contracts
+	url = https://github.com/smartcontractkit/chainlink-brownie-contracts
+[submodule "avax_chainlink/lib/forge-std"]
+	path = avax_chainlink/lib/forge-std
+	url = https://github.com/foundry-rs/forge-std
+[submodule "avax_chainlink/lib/v2-core"]
+	path = avax_chainlink/lib/v2-core
+	url = https://github.com/Uniswap/v2-core

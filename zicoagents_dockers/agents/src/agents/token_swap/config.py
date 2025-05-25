@@ -22,6 +22,8 @@ class Config:
         "1": "https://eth.llamarpc.com/",
         "10": "https://mainnet.optimism.io",
         "8453": "https://mainnet.base.org",
+        "43114": "https://api.avax.network/ext/bc/C/rpc",  # Avalanche Mainnet
+        "43113": "https://api.avax-test.network/ext/bc/C/rpc",  # Avalanche Fuji Testnet
     }
     NATIVE_TOKENS = {
         "137": "MATIC",
@@ -30,6 +32,8 @@ class Config:
         "42161": "ETH",
         "10": "ETH",
         "8453": "ETH",
+        "43114": "AVAX",  # Avalanche Mainnet
+        "43113": "AVAX",  # Avalanche Fuji Testnet
     }
     ERC20_ABI = [
         {

@@ -7,8 +7,9 @@ import {Permit2Lib} from "./libraries/Permit2Lib.sol";
 import {IDefaultCollateral} from "src/interfaces/defaultCollateral/IDefaultCollateral.sol";
 import {SafeERC20} from "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
 import {IERC20Permit} from "@openzeppelin/contracts/token/ERC20/extensions/IERC20Permit.sol";
+import {Initializable} from "@openzeppelin/contracts-upgradeable/proxy/utils/Initializable.sol";
 
-contract SuzakuStaking is Factory {
+contract SuzakuStaking is Factory, Initializable {
     using Permit2Lib for IERC20;
     using SafeERC20 for IERC20;
     
@@ -43,6 +44,10 @@ contract SuzakuStaking is Factory {
     error InsufficientDeposit();
     
     constructor(address _suzakuToken) {
+        _disableInitializers();
+    }
+
+    function initialize(address _suzakuToken) external initializer {
         if (_suzakuToken == address(0)) revert InvalidToken();
         suzakuToken = IERC20(_suzakuToken);
     }
@@ -134,12 +139,27 @@ contract SuzakuStaking is Factory {
         require(_newRate <= 1000, "Rate too high"); 
         rewardRate = _newRate;
     }
-    
+
     function getStakeAmount(address _user) external view returns (uint256) {
         return stakes[_user].amount;
     }
     
     function getStakeStartTime(address _user) external view returns (uint256) {
         return stakes[_user].startTime;
+    }
+
+    function getStakeInfo(address _user) external view returns (
+        uint256 amount,
+        uint256 startTime,
+        uint256 lastRewardCalculation,
+        bool isStaking
+    ) {
+        StakeInfo memory userStake = stakes[_user];
+        return (
+            userStake.amount,
+            userStake.startTime,
+            userStake.lastRewardCalculation,
+            userStake.isStaking
+        );
     }
 }

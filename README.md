@@ -225,10 +225,6 @@ forge build
 forge test
 ```
 
-## License
-
-MIT License
-
 ## About Suzaku
 
 Suzaku is a DeFi protocol focused on providing innovative staking solutions. The protocol emphasizes security, efficiency, and user value through its dual staking system. By combining traditional staking with restaking mechanics, Suzaku creates new opportunities for yield optimization while maintaining robust security measures.

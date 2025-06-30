@@ -79,7 +79,7 @@ class AgentCore(ABC):
         """
         raise NotImplementedError("Subclasses must implement _process_request")
 
-    async def _handle_llm_response(self, response: Any) -> AgentResponse:
+    async def _handle_llm_response(self, response: Any, request: ChatRequest) -> AgentResponse:
         """Handle LLM response and convert to appropriate AgentResponse"""
         try:
             if not response:
@@ -93,7 +93,7 @@ class AgentCore(ABC):
             if tool_calls:
                 # Handle tool calls
                 self.logger.info(f"Processing tool calls: {tool_calls}")
-                return await self._process_tool_calls(tool_calls)
+                return await self._process_tool_calls(tool_calls, request)
             elif content:
                 # Direct response from LLM
                 self.logger.info(f"Received direct response from LLM: {content}")
@@ -106,12 +106,13 @@ class AgentCore(ABC):
             self.logger.error(f"Error processing LLM response: {str(e)}", exc_info=True)
             return AgentResponse.error(error_message="Error processing the response")
 
-    async def _process_tool_calls(self, tool_calls: list) -> AgentResponse:
+    async def _process_tool_calls(self, tool_calls: list, request: ChatRequest) -> AgentResponse:
         """Process tool calls from LLM response"""
         try:
             tool_call = tool_calls[0]  # Get first tool call
             func_name = tool_call.get("name")
             args = tool_call.get("args", {})
+            args["request"] = request  # Pass the request object to the tool
 
             if not func_name:
                 return AgentResponse.error(error_message="Invalid tool call format - no function name provided")

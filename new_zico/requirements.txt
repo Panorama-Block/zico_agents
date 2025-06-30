@@ -1,0 +1,56 @@
+python-dotenv==1.0.0
+google-generativeai>=0.8.0
+langchain-google-genai>=2.0.0
+langchain-core>=0.2.43
+fastapi==0.109.2
+uvicorn==0.27.1
+pydantic>=2.7.4
+python-multipart==0.0.9
+
+# LangGraph and multi-agent dependencies
+langgraph>=0.2.70
+langgraph-supervisor>=0.0.1
+langchain>=0.2.0
+langchain-community>=0.2.0
+
+# Testing dependencies
+pytest==8.0.0
+pytest-cov==4.1.0
+pytest-asyncio==0.23.5
+
+# Additional dependencies
+scikit-learn==1.4.0
+numpy>=1.24.0
+pandas>=2.0.0
+
+# Monitoring and logging
+structlog>=23.0.0
+prometheus-client>=0.17.0
+
+# Database (optional for production)
+sqlalchemy>=2.0.0
+alembic>=1.12.0
+
+# Caching
+redis>=5.0.0
+
+# HTTP client
+httpx>=0.25.0
+requests>=2.31.0
+
+# Data validation and serialization
+marshmallow>=3.20.0
+jsonschema>=4.19.0
+
+# Async support
+asyncio-mqtt>=0.16.0
+aiofiles>=23.0.0
+
+# Security
+cryptography>=41.0.0
+passlib>=1.7.4
+
+# Development tools
+black>=23.0.0
+flake8>=6.0.0
+mypy>=1.5.0

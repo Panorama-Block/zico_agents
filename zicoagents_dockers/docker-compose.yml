@@ -1,6 +1,6 @@
 services:
   agents:
-    image: lachsbagel/moragents_dockers-agents:amd64-0.2.2
+    image: zico_agents
     build:
       dockerfile: Dockerfile
       context: ./agents

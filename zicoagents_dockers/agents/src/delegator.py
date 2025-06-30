@@ -12,11 +12,66 @@ class Delegator:
     def __init__(self, llm, embeddings):
         self.llm = llm  # Keep llm instance on delegator
         self.attempted_agents = set()  # Track attempted agents within a chat session
+        self.conversation_states = {}  # Store conversation states per user
 
         # Load all agents via agent manager
         agent_manager_instance.load_all_agents(llm, embeddings)
         logger.info(f"Delegator initialized with {len(agent_manager_instance.agents)} agents")
         logger.info(f"Active agents: {agent_manager_instance.get_selected_agents()}")
+
+    def _get_or_create_conversation_state(self, user_id: str) -> Dict:
+        """Get or create conversation state for a user"""
+        if user_id not in self.conversation_states:
+            self.conversation_states[user_id] = {
+                "last_coin": None,
+                "last_protocol": None,
+                "last_nft": None,
+                "last_agent": None,
+                "last_response": None,
+                "conversation_history": []
+            }
+        return self.conversation_states[user_id]
+
+    def _update_conversation_state(self, user_id: str, agent_name: str, response: AgentResponse) -> None:
+        """Update conversation state with the latest interaction"""
+        state = self._get_or_create_conversation_state(user_id)
+        state["last_agent"] = agent_name
+        state["last_response"] = response.dict()
+        state["conversation_history"].append({
+            "agent": agent_name,
+            "response": response.dict()
+        })
+
+    def _get_context_for_agent(self, user_id: str, agent_name: str) -> List[SystemMessage]:
+        """Get relevant context for a specific agent"""
+        state = self._get_or_create_conversation_state(user_id)
+        context_messages = []
+        
+        logger.info(f"Getting context for agent {agent_name} with state: {state}")
+
+        # Add general context
+        if state["last_agent"]:
+            context_messages.append(SystemMessage(
+                content=f"Last agent used: {state['last_agent']}"
+            ))
+
+        # Add agent-specific context
+        if agent_name == "crypto_data":
+            if state["last_coin"]:
+                context_messages.append(SystemMessage(
+                    content=f"Last mentioned coin: {state['last_coin']}"
+                ))
+            if state["last_protocol"]:
+                context_messages.append(SystemMessage(
+                    content=f"Last mentioned protocol: {state['last_protocol']}"
+                ))
+            if state["last_nft"]:
+                context_messages.append(SystemMessage(
+                    content=f"Last mentioned NFT: {state['last_nft']}"
+                ))
+        
+        logger.info(f"Generated context messages: {context_messages}")
+        return context_messages
 
     def reset_attempted_agents(self):
         """Reset the set of attempted agents"""
@@ -77,6 +132,8 @@ class Delegator:
             HumanMessage(content=prompt["content"]),
         ]
 
+        logger.info(f"Messages: {messages}")
+
         result = agent_selection_llm.invoke(messages)
         tool_calls = result.tool_calls
 
@@ -110,7 +167,26 @@ class Delegator:
             return await self._try_next_agent(chat_request)
 
         try:
+            # Get context for this agent
+            context_messages = self._get_context_for_agent(chat_request.user_id, agent_name)
+            logger.info(f"Got context messages for {agent_name}: {context_messages}")
+            
+            # Add context to the chat request
+            if hasattr(chat_request, 'context'):
+                chat_request.context = context_messages
+                logger.info(f"Added context to chat request: {chat_request.context}")
+            else:
+                # If the agent doesn't support context, we'll need to modify the prompt
+                context_str = "\n".join([msg.content for msg in context_messages])
+                if context_str:
+                    chat_request.prompt.content = f"{context_str}\n\nUser query: {chat_request.prompt.content}"
+                    logger.info(f"Modified prompt with context: {chat_request.prompt.content}")
+
             result = await agent.chat(chat_request)
+            
+            # Update conversation state with the response
+            self._update_conversation_state(chat_request.user_id, agent_name, result)
+            
             logger.info(f"Chat delegation to {agent_name} completed successfully")
             return agent_name, result
         except Exception as e:

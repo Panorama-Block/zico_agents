@@ -3,6 +3,7 @@ from enum import Enum
 from typing import List, Optional, Dict, Any
 from fastapi import Query
 from pydantic import BaseModel, Field
+from langchain.schema import SystemMessage
 
 
 class ResponseType(Enum):
@@ -45,6 +46,7 @@ class ChatRequest(BaseModel):
     wallet_address: str
     conversation_id: str = Query(default="default")
     user_id: str = Query(default="anonymous")
+    context: Optional[List[SystemMessage]] = None  # Context from delegator
 
 
 class Conversation(BaseModel):

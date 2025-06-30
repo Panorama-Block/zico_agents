@@ -6,8 +6,16 @@ import {StakingFactory} from "src/contracts/StakingFactory.sol";
 import {SuzakuStaking} from "src/contracts/Staking.sol";
 import {MockERC20} from "./mocks/MockERC20.sol";
 import {FeeOnTransferToken} from "./mocks/FeeOnTransferToken.sol";
+import "@openzeppelin/contracts/token/ERC20/IERC20.sol";
+
 
 contract StakingTest is Test {
+    address public constant COLLATERAL_FACTORY = 0xE5296638Aa86BD4175d802A210E158688e41A93c;
+
+    address[] public collateralTokens;
+
+    mapping(string => address) public collateralBySymbol;
+
     address public constant DEAD = 0x000000000000000000000000000000000000dEaD;
     
     uint256 public alicePrivateKey;
@@ -50,7 +58,28 @@ contract StakingTest is Test {
         token.approve(address(stakingToken), type(uint256).max);
         feeOnTransferToken.approve(address(stakingToken), type(uint256).max);
         vm.stopPrank();
+
+        collateralTokens.push(0xE3C983013B8c5830D866F550a28fD7Ed4393d5B7); // sAVAX
+        collateralTokens.push(0x203E9101e09dc87ce391542E705a07522d19dF0d); // BTC.b
+        collateralTokens.push(0xa53E127Bfd9C4d0310858D9D5Fcdf1D2617d4C41); // AUSD
+        collateralTokens.push(0x1D8bd363922465246A91B7699e7B32BAbf5FEF62); // SolvBTC
+        collateralTokens.push(0x8F1dea444380A2DDC5e6669f508d235401CaEE5F); // COQ
+
+        collateralBySymbol["sAVAX"] = collateralTokens[0];
+        collateralBySymbol["BTC.b"] = collateralTokens[1];
+        collateralBySymbol["AUSD"] = collateralTokens[2];
+        collateralBySymbol["SolvBTC"] = collateralTokens[3];
+        collateralBySymbol["COQ"] = collateralTokens[4];
     }
+
+    function test_CollateralTokenIsERC20() public {
+        for (uint256 i = 0; i < collateralTokens.length; i++) {
+            address tokenAddr = collateralTokens[i];
+            uint256 balance = IERC20(tokenAddr).balanceOf(address(this));
+            assertEq(balance, 0, "Initial balance should be 0");
+        }
+    }
+
     
     function test_Deposit(uint256 amount) public {
         amount = bound(amount, 1, 50 * 1e18);

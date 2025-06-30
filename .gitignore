@@ -5,6 +5,7 @@ __pycache__/
 .env.local
 .env.prod
 !.env.*.example
+.venv/
 
 # SSL certificates
 frontend/ssl/

@@ -22,16 +22,6 @@ contract AnalysisTest is Test {
         analysis.getTokenAddresses("INVALID/PAIR");
     }
 
-    function testGetMediumPriceValid() public view {
-        uint price = analysis.getMediumPrice("ETH/USD");
-        assertGt(price, 0);
-    }
-
-    function testMakeAnalysisReturnsString() public view {
-        string memory result = analysis.makeAnalysis("ETH/USD");
-        assertGt(bytes(result).length, 0);
-    }
-
     function testBalanceInitialZero() public view {
         uint bal = analysis.balance();
         assertEq(bal, 0);

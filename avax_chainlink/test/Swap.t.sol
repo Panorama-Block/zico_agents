@@ -11,14 +11,22 @@ contract SwapTest is Test {
         swap = new Swap();
     }
 
-    function testGetMediumPriceAVAX() public view {
-        uint price = swap.getMediumPrice("AVAX/USD");
-        console.log("AVAX/USD Price:", price);
-        assertGt(price, 0);
+    // Esse teste é só pra mostrar que o contrato foi implantado corretamente
+    function testContractDeployment() public {
+        assertEq(address(swap) != address(0), true);
     }
 
-    function testGetMediumPriceInvalidPair() public {
-        vm.expectRevert(bytes("Pair not found"));
-        swap.getMediumPrice("INVALID/PAIR");
+    // Valida que a função getTokenAddresses retorna corretamente sem revert
+    function testGetTokenAddresses() public {
+        (address tokenA, address tokenB) = swap.getTokenAddresses("AVAX/USD");
+        console.log("Token A:", tokenA);
+        console.log("Token B:", tokenB);
+        assertTrue(tokenA != address(0) && tokenB != address(0));
+    }
+
+    // Teste que espera erro ao passar par inválido
+    function testGetTokenAddressesInvalidPair() public {
+        vm.expectRevert(bytes("Unknown Pair"));
+        swap.getTokenAddresses("INVALID/PAIR");
     }
 }

@@ -1,6 +1,7 @@
 require("dotenv").config();
 const express = require("express");
 const { ethers } = require("ethers");
+const { JsonRpcProvider, formatEther } = require("ethers");
 const cors = require("cors");
 const fs = require("fs");
 
@@ -8,14 +9,14 @@ const app = express();
 const port = 3000;
 app.use(cors());
 
-const provider = new ethers.providers.JsonRpcProvider(process.env.RPC_URL);
+const provider = new JsonRpcProvider(process.env.RPC_URL);
 
 // ----------- Analysis Contract -----------
-const analysisAbi = require("./abi/Analysis.json");
+const analysisAbi = require("./abi/Analysis.json").abi;
 const analysisContract = new ethers.Contract(process.env.CONTRACT_ADDRESS, analysisAbi, provider);
 
 // ----------- Swap Contract -----------
-const swapAbi = require("./abi/Swap.json");
+const swapAbi = require("./abi/Swap.json").abi;
 const swapContract = new ethers.Contract(process.env.SWAP_CONTRACT_ADDRESS, swapAbi, provider);
 
 // ----------- Routes for Analysis -----------
@@ -89,8 +90,8 @@ app.get("/swap/token-addresses/:pair", async (req, res) => {
 
 app.get("/swap/balance", async (req, res) => {
   try {
-    const balance = await swapContract.balance();
-    res.json({ balance: ethers.utils.formatEther(balance) + " AVAX" });
+    const balance = await swapContract.balance(); 
+    res.json({ balance: formatEther(balance) + " AVAX" });
   } catch (err) {
     console.error(err);
     res.status(500).json({ error: "Erro ao buscar balance", details: err.message });

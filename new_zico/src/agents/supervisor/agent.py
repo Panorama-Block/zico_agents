@@ -1,300 +1,135 @@
 from langchain_google_genai import ChatGoogleGenerativeAI, GoogleGenerativeAIEmbeddings
 from langgraph_supervisor import create_supervisor
-from langgraph.graph import StateGraph, END
-from langchain_core.messages import HumanMessage, SystemMessage, AIMessage
-from typing import TypedDict, Literal, List, Any, Dict, Optional
-import logging
-
 from src.agents.config import Config
-from src.models.chatMessage import AgentType, MessageRole
+from typing import TypedDict, Literal, List, Any
 
 # Agents
 from src.agents.crypto_data.agent import CryptoDataAgent
+from src.agents.database.agent import DatabaseAgent
+from src.agents.default.agent import DefaultAgent
+from src.agents.database.client import is_database_available
 
-logger = logging.getLogger(__name__)
+llm = ChatGoogleGenerativeAI(
+    model=Config.GEMINI_MODEL,
+    temperature=0.7,
+    google_api_key=Config.GEMINI_API_KEY
+)
 
+embeddings = GoogleGenerativeAIEmbeddings(
+    model=Config.GEMINI_EMBEDDING_MODEL,
+    google_api_key=Config.GEMINI_API_KEY
+)
 
 class ChatMessage(TypedDict):
     role: Literal["system", "user", "assistant"]
     content: str
 
-
-class ConversationState(TypedDict):
-    """State for LangGraph conversation flow"""
-    messages: List[ChatMessage]
-    current_agent: Optional[str]
-    agent_history: List[Dict[str, Any]]
-    context: Dict[str, Any]
-    user_id: str
-    conversation_id: str
-
-
 class Supervisor:
-    def __init__(self, llm: ChatGoogleGenerativeAI):
+    def __init__(self, llm):
         self.llm = llm
-        self.embeddings = Config.get_embeddings()
-        
-        # Initialize agents
-        self.crypto_data_agent = CryptoDataAgent(llm)
-        
-        # Create the supervisor graph
-        self.supervisor_graph = self._create_supervisor_graph()
-        
-        # Compile the graph
-        self.app = self.supervisor_graph.compile()
 
-    def _create_supervisor_graph(self) -> StateGraph:
-        """Create the LangGraph state graph for supervisor"""
-        
-        # Define the state graph
-        workflow = StateGraph(ConversationState)
-        
-        # Add nodes for different agents
-        workflow.add_node("supervisor", self._supervisor_node)
-        workflow.add_node("crypto_agent", self._crypto_agent_node)
-        workflow.add_node("general_agent", self._general_agent_node)
-        
-        # Add conditional edges
-        workflow.add_conditional_edges(
-            "supervisor",
-            self._route_to_agent,
-            {
-                "crypto_agent": "crypto_agent",
-                "general_agent": "general_agent",
-                "end": END
-            }
+        cryptoDataAgentClass = CryptoDataAgent(llm)
+        cryptoDataAgent = cryptoDataAgentClass.agent
+
+        agents = [cryptoDataAgent]
+        available_agents_text = "- crypto_agent: Handles cryptocurrency-related queries like price checks, market data, NFT floor prices, DeFi protocol TVL, etc.\n"
+
+        # Conditionally include database agent
+        if is_database_available():
+            databaseAgent = DatabaseAgent(llm)
+            agents.append(databaseAgent)
+            available_agents_text += "- database_agent: Handles database queries and data analysis. Can search and analyze data from the database.\n"
+        else:
+            databaseAgent = None
+
+        defaultAgent = DefaultAgent(llm)
+        agents.append(defaultAgent.agent)
+
+        # System prompt to guide the supervisor
+        system_prompt = f"""You are a helpful supervisor that routes user queries to the appropriate specialized agents.
+
+Available agents:
+{available_agents_text}
+
+When a user asks about cryptocurrency prices, market data, NFTs, or DeFi protocols, delegate to the crypto_agent.
+{"When a user asks for data analysis, database queries, or information from the database, delegate to the database_agent." if databaseAgent else "Do not delegate to a database agent; answer best-effort without DB access or ask the user to start the database."}
+For all other queries, respond directly as a helpful assistant.
+
+IMPORTANT: your final response should answer the user's query. Use the agents response to answer the user's query if necessary.
+
+Examples of crypto queries to delegate:
+- "What is the price of ETH?"
+- "What's the market cap of Bitcoin?"
+- "What's the floor price of Bored Apes?"
+- "What's the TVL of Uniswap?"
+
+{"Examples of database queries to delegate:\n- \"What are the avax chains?\"\n- \"What information is available about the AVAX in the database agent?\"\n- \"What is the total number of activities addresses in AVAX?\"\n- \"How many transactions are there in the AVAX network?\"\n" if databaseAgent else ""}
+
+Examples of general queries to handle directly:
+- "Hello, how are you?"
+- "What's the weather like?"
+- "Tell me a joke"
+"""
+
+        self.supervisor = create_supervisor(
+            agents,
+            model=llm,
+            prompt=system_prompt,
+            output_mode="last_message"
         )
-        
-        # Add edges from agents back to supervisor or end
-        workflow.add_edge("crypto_agent", "supervisor")
-        workflow.add_edge("general_agent", "supervisor")
-        
-        # Set entry point
-        workflow.set_entry_point("supervisor")
-        
-        return workflow
 
-    def _supervisor_node(self, state: ConversationState) -> ConversationState:
-        """Supervisor node that analyzes the message and determines routing"""
+        self.app = self.supervisor.compile()
+
+    def invoke(self, messages: List[ChatMessage]) -> dict:
+        from langchain_core.messages import HumanMessage, SystemMessage, AIMessage
+
+        langchain_messages = []
+        for msg in messages:
+            if msg.get("role") == "user":
+                langchain_messages.append(HumanMessage(content=msg.get("content", "")))
+            elif msg.get("role") == "system":
+                langchain_messages.append(SystemMessage(content=msg.get("content", "")))
+            elif msg.get("role") == "assistant":
+                langchain_messages.append(AIMessage(content=msg.get("content", "")))
+
         try:
-            # Get the latest user message
-            latest_message = state["messages"][-1] if state["messages"] else None
-            
-            if not latest_message or latest_message["role"] != "user":
-                # No user message, end conversation
-                return state
-            
-            # Analyze the message content
-            content = latest_message["content"].lower()
-            
-            # Update context based on message content
-            context_updates = {}
-            if any(word in content for word in ["bitcoin", "eth", "crypto", "price", "market", "nft", "defi"]):
-                context_updates["crypto_related"] = True
-            if any(word in content for word in ["hello", "hi", "how are you", "weather", "joke"]):
-                context_updates["general_related"] = True
-            
-            # Update state context
-            state["context"].update(context_updates)
-            
-            # Add supervisor analysis to agent history
-            state["agent_history"].append({
+            response = self.app.invoke({"messages": langchain_messages})
+            print("DEBUG: response", response)
+        except Exception as e:
+            print(f"Error in Supervisor: {e}")
+            return {
+                "messages": [],
                 "agent": "supervisor",
-                "action": "message_analysis",
-                "context_updates": context_updates,
-                "timestamp": "now"
-            })
-            
-            return state
-            
-        except Exception as e:
-            logger.error(f"Error in supervisor node: {e}")
-            return state
-
-    def _route_to_agent(self, state: ConversationState) -> str:
-        """Route to appropriate agent based on message content and context"""
-        try:
-            latest_message = state["messages"][-1] if state["messages"] else None
-            
-            if not latest_message:
-                return "end"
-            
-            content = latest_message["content"].lower()
-            context = state["context"]
-            
-            # Check if crypto-related
-            if (context.get("crypto_related") or 
-                any(word in content for word in ["bitcoin", "eth", "crypto", "price", "market", "nft", "defi", "floor price", "tvl"])):
-                return "crypto_agent"
-            
-            # Check if general conversation
-            if (context.get("general_related") or 
-                any(word in content for word in ["hello", "hi", "how are you", "weather", "joke", "help"])):
-                return "general_agent"
-            
-            # Default to general agent
-            return "general_agent"
-            
-        except Exception as e:
-            logger.error(f"Error in routing: {e}")
-            return "general_agent"
-
-    def _crypto_agent_node(self, state: ConversationState) -> ConversationState:
-        """Crypto agent node"""
-        try:
-            # Get the latest user message
-            latest_message = state["messages"][-1] if state["messages"] else None
-            
-            if not latest_message:
-                return state
-            
-            # Convert messages to LangChain format
-            langchain_messages = []
-            for msg in state["messages"][-5:]:  # Last 5 messages for context
-                if msg["role"] == "user":
-                    langchain_messages.append(HumanMessage(content=msg["content"]))
-                elif msg["role"] == "system":
-                    langchain_messages.append(SystemMessage(content=msg["content"]))
-            
-            # Add system context
-            context_str = ""
-            if state["context"].get("crypto_related"):
-                context_str = "This is a cryptocurrency-related query. Use appropriate crypto tools."
-            
-            if context_str:
-                langchain_messages.insert(0, SystemMessage(content=context_str))
-            
-            # Get response from crypto agent
-            response = self.crypto_data_agent.agent.invoke({"messages": langchain_messages})
-            
-            # Add agent response to messages
-            agent_message = {
-                "role": "assistant",
-                "content": response.get("output", "I couldn't process that crypto query."),
-                "agent": "crypto_agent"
+                "response": "Sorry, an error occurred while processing your request."
             }
-            state["messages"].append(agent_message)
-            
-            # Update current agent
-            state["current_agent"] = "crypto_agent"
-            
-            # Add to agent history
-            state["agent_history"].append({
-                "agent": "crypto_agent",
-                "action": "crypto_query_processed",
-                "timestamp": "now"
-            })
-            
-            return state
-            
-        except Exception as e:
-            logger.error(f"Error in crypto agent node: {e}")
-            # Add error message
-            error_message = {
-                "role": "assistant",
-                "content": "Sorry, I encountered an error processing your crypto query. Please try again.",
-                "agent": "crypto_agent"
-            }
-            state["messages"].append(error_message)
-            return state
 
-    def _general_agent_node(self, state: ConversationState) -> ConversationState:
-        """General agent node for non-crypto queries"""
-        try:
-            # Get the latest user message
-            latest_message = state["messages"][-1] if state["messages"] else None
-            
-            if not latest_message:
-                return state
-            
-            # Create a simple response for general queries
-            content = latest_message["content"].lower()
-            
-            if any(word in content for word in ["hello", "hi"]):
-                response_content = "Hello! I'm your AI assistant. I can help you with cryptocurrency queries and general questions. What would you like to know?"
-            elif any(word in content for word in ["how are you"]):
-                response_content = "I'm doing well, thank you for asking! I'm here to help you with your questions."
-            elif any(word in content for word in ["weather"]):
-                response_content = "I don't have access to real-time weather data, but I can help you with cryptocurrency information and other questions!"
-            elif any(word in content for word in ["joke"]):
-                response_content = "Why did the cryptocurrency go to therapy? Because it had too many emotional ups and downs! 😄"
+        messages_out = response.get("messages", []) if isinstance(response, dict) else []
+
+        # Safely extract final response content
+        final_response = None
+        final_agent = "supervisor"
+
+        for m in reversed(messages_out):
+            content = getattr(m, "content", None)
+            if content:
+                final_response = content
+                break
+
+        for m in reversed(messages_out):
+            agent_name = getattr(m, "name", None)
+            if agent_name:
+                final_agent = agent_name
+                break
+
+        if final_response is None:
+            # Fallbacks if structure differs
+            if isinstance(response, dict):
+                final_response = response.get("response") or "No response available"
             else:
-                response_content = "I'm here to help! I specialize in cryptocurrency information, but I can also assist with general questions. What would you like to know?"
-            
-            # Add agent response to messages
-            agent_message = {
-                "role": "assistant",
-                "content": response_content,
-                "agent": "general_agent"
-            }
-            state["messages"].append(agent_message)
-            
-            # Update current agent
-            state["current_agent"] = "general_agent"
-            
-            # Add to agent history
-            state["agent_history"].append({
-                "agent": "general_agent",
-                "action": "general_query_processed",
-                "timestamp": "now"
-            })
-            
-            return state
-            
-        except Exception as e:
-            logger.error(f"Error in general agent node: {e}")
-            # Add error message
-            error_message = {
-                "role": "assistant",
-                "content": "Sorry, I encountered an error. Please try again.",
-                "agent": "general_agent"
-            }
-            state["messages"].append(error_message)
-            return state
+                final_response = "No response available"
 
-    def invoke(self, messages: List[ChatMessage], user_id: str = "anonymous", conversation_id: str = "default") -> dict:
-        """Invoke the supervisor with messages"""
-        try:
-            # Prepare initial state
-            initial_state: ConversationState = {
-                "messages": messages,
-                "current_agent": None,
-                "agent_history": [],
-                "context": {},
-                "user_id": user_id,
-                "conversation_id": conversation_id
-            }
-            
-            # Run the graph
-            result = self.app.invoke(initial_state)
-            
-            # Extract the final response
-            final_messages = result.get("messages", [])
-            final_agent = result.get("current_agent", "supervisor")
-            
-            # Get the last assistant message
-            last_assistant_message = None
-            for msg in reversed(final_messages):
-                if msg["role"] == "assistant":
-                    last_assistant_message = msg
-                    break
-            
-            response_content = last_assistant_message["content"] if last_assistant_message else "No response generated"
-            
-            return {
-                "messages": final_messages,
-                "agent": final_agent,
-                "response": response_content,
-                "context": result.get("context", {}),
-                "agent_history": result.get("agent_history", [])
-            }
-            
-        except Exception as e:
-            logger.error(f"Error in supervisor invoke: {e}", exc_info=True)
-            return {
-                "messages": messages,
-                "agent": "supervisor",
-                "response": "Sorry, I encountered an error processing your request. Please try again.",
-                "context": {},
-                "agent_history": []
-            }
+        return {
+            "messages": messages_out,
+            "agent": final_agent,
+            "response": final_response or "Sorry, no meaningful response was returned."
+        }

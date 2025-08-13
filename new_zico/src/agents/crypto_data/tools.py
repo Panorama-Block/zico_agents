@@ -228,11 +228,16 @@ def get_tvl_value(protocol_id: str) -> float:
     Returns:
         TVL value (could be a dict or number depending on API).
     """
-    url = f"{Config.DEFILLAMA_BASE_URL}/tvl/{protocol_id}"
+    url = f"{Config.DEFILLAMA_BASE_URL}/chains"
     try:
+        print(f"URL: {url}")
         response = requests.get(url)
+        print(f"Response: {response.json()}")
         response.raise_for_status()
-        return response.json()
+        chains = response.json()
+        chain = next((c for c in chains if c["name"].lower() == protocol_id.lower()), None)
+        print(f"Chain: {chain}")
+        return chain["tvl"]
     except requests.exceptions.RequestException as e:
         logging.error(f"Failed to retrieve protocol TVL: {e}")
         raise

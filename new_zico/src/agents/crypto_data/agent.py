@@ -16,14 +16,5 @@ class CryptoDataAgent():
             tools=get_tools(),
             name="crypto_agent"
         )
-    
-    def invoke(self, messages):
-        """Invoke the crypto agent with messages"""
-        try:
-            response = self.agent.invoke({"messages": messages})
-            return response
-        except Exception as e:
-            logger.error(f"Error in crypto agent: {e}")
-            return {"output": "Sorry, I encountered an error processing your crypto query."}
 
 

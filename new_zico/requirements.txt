@@ -59,4 +59,4 @@ mypy>=1.5.0
 
 # ClickHouse dependencies
 clickhouse-connect>=0.7.0
-clickhouse-sqlalchemy>=0.4.0
+clickhouse-sqlalchemy==0.3.2

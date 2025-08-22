@@ -41,6 +41,9 @@ class ChatMessage(BaseModel):
     agent_name: Optional[str] = Field(None, description="Name of the agent that processed this message")
     agent_type: Optional[AgentType] = Field(None, description="Type of agent that processed this message")
     
+    requires_action: bool = Field(default=False, description="Whether this message requires followup")
+    action_type: Optional[str] = Field(None, description="Type of action required")
+    
     # Metadata and context
     metadata: Dict[str, Any] = Field(default_factory=dict, description="Additional metadata")
     timestamp: datetime = Field(default_factory=datetime.utcnow, description="Message timestamp")

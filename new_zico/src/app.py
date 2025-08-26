@@ -45,6 +45,8 @@ AVAILABLE_AGENTS = [
     {"name": "default", "human_readable_name": "Default General Purpose", "description": "General chat and meta-queries about agents."},
     {"name": "crypto data", "human_readable_name": "Crypto Data Fetcher", "description": "Real-time cryptocurrency prices, market cap, FDV, TVL."},
     {"name": "token swap", "human_readable_name": "Token Swap Agent", "description": "Swap tokens using supported DEX APIs."},
+    {"name": "icp", "human_readable_name": "ICP Agent", "description": "Internet Computer staking and swaps with Candid transactions."},
+    {"name": "advisory", "human_readable_name": "Fetch.ai Advisor", "description": "Market timing, position sizing, and trading analysis via Fetch.ai."},
     {"name": "realtime search", "human_readable_name": "Real-Time Search", "description": "Search the web for recent information."},
     {"name": "dexscreener", "human_readable_name": "DexScreener Analyst", "description": "Fetches and analyzes DEX trading data."},
     {"name": "rugcheck", "human_readable_name": "Token Safety Analyzer", "description": "Analyzes token safety and trends (Solana)."},
@@ -64,6 +66,8 @@ SELECTED_AGENTS = [agent["name"] for agent in AVAILABLE_AGENTS[:6]]
 AGENT_COMMANDS = [
     {"command": "morpheus", "name": "Default General Purpose", "description": "General assistant for simple queries and meta-questions."},
     {"command": "crypto", "name": "Crypto Data Fetcher", "description": "Get prices, market cap, FDV, TVL and more."},
+    {"command": "icp", "name": "ICP Agent", "description": "Stake and swap on Internet Computer with Plug wallet."},
+    {"command": "advisor", "name": "Fetch.ai Advisor", "description": "Market analysis, timing, and position sizing advice."},
     {"command": "document", "name": "Document Assistant", "description": "Ask questions about uploaded documents."},
     {"command": "tweet", "name": "Tweet / X-Post Generator", "description": "Create engaging tweets about crypto and web3."},
     {"command": "search", "name": "Real-Time Search", "description": "Search the web for recent events or updates."},
@@ -109,6 +113,8 @@ def _map_agent_type(agent_name: str) -> str:
         "database_agent": "analysis",
         "swap_agent": "token swap",
         "supervisor": "supervisor",
+        "icp_agent": "icp",
+        "fetch_agent": "advisory",
     }
     return mapping.get(agent_name, "supervisor")
 

@@ -1,0 +1,70 @@
+type Token = variant {
+  ICP;
+  ckBTC;
+  ckETH;
+  CHAT;
+};
+
+type Pair = record {
+  tokenA: Token;
+  tokenB: Token;
+};
+
+type SwapQuote = record {
+  amount_out_e8s: nat;
+  fee_bps: nat;
+  route: vec text;
+  price_impact_bps: nat;
+};
+
+type SwapReceipt = record {
+  swap_id: nat;
+  pair: Pair;
+  amount_in_e8s: nat;
+  amount_out_e8s: nat;
+  fee_e8s: nat;
+  timestamp: int;
+};
+
+type RateView = record {
+  mid_e8s: nat;
+  fee_bps: nat;
+  spread_bps: nat;
+};
+
+type SwapView = record {
+  swap_id: nat;
+  when: int;
+  pair: Pair;
+  amount_in_e8s: nat;
+  amount_out_e8s: nat;
+  fee_e8s: nat;
+};
+
+type QuoteResult = variant {
+  Ok: SwapQuote;
+  Err: text;
+};
+
+type RateResult = variant {
+  Ok: RateView;
+  Err: text;
+};
+
+type SwapResult = variant {
+  Ok: SwapReceipt;
+  Err: text;
+};
+
+type LiquidityResult = variant {
+  Ok: nat;
+  Err: text;
+};
+
+service : {
+  quote: (pair: Pair, amount_in_e8s: nat) -> (QuoteResult) query;
+  get_rates: (pair: Pair) -> (RateResult) query;
+  list_swaps: (user: principal, cursor: opt nat) -> (vec SwapView) query;
+  create_swap: (pair: Pair, amount_in_e8s: nat, min_out_e8s: nat) -> (SwapResult);
+  add_liquidity: (pair: Pair, amountA_e8s: nat, amountB_e8s: nat) -> (LiquidityResult);
+}

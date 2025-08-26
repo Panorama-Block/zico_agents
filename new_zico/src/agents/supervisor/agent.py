@@ -11,6 +11,8 @@ from src.agents.crypto_data.agent import CryptoDataAgent
 from src.agents.database.agent import DatabaseAgent
 from src.agents.default.agent import DefaultAgent
 from src.agents.swap.agent import SwapAgent
+from src.agents.icp.agent import ICPAgent
+from src.agents.fetch.agent import FetchAgent
 from src.agents.database.client import is_database_available
 
 llm = ChatGoogleGenerativeAI(
@@ -53,8 +55,18 @@ class Supervisor:
         defaultAgent = DefaultAgent(llm)
         agents.append(defaultAgent.agent)
 
+        # NEW: ICP agent (sempre disponível para planejar ações ICP)
+        icpAgent = ICPAgent(llm)
+        agents.append(icpAgent.agent)
+        available_agents_text += "- icp_agent: Plans ICP staking and swaps (returns Candid method+args for Plug to sign). Handles Internet Computer operations.\n"
+
+        # NEW: Fetch.ai advisor agent
+        fetchAgent = FetchAgent(llm)
+        agents.append(fetchAgent.agent)
+        available_agents_text += "- fetch_agent: Trading advisor for timing, position sizing, fee/slippage analysis and network metrics via Fetch.ai.\n"
+
         # Track known agent names for response extraction
-        self.known_agent_names = {"crypto_agent", "database_agent", "swap_agent", "default_agent"}
+        self.known_agent_names = {"crypto_agent", "database_agent", "swap_agent", "default_agent", "icp_agent", "fetch_agent"}
 
         # Prepare database guidance text to avoid backslashes in f-string expressions
         if databaseAgent:
@@ -78,6 +90,8 @@ Available agents:
 
 When a user asks about cryptocurrency prices, market data, NFTs, or DeFi protocols, delegate to the crypto_agent.
 {database_instruction}
+When a user asks about ICP staking, ICP swaps, Internet Computer operations, Bitcoin operations via ICP, or mentions ICP/ckBTC/ckETH/CHAT tokens, delegate to the icp_agent.
+When a user asks for market analysis, timing advice, position sizing, trading strategies, or Fetch.ai insights, delegate to the fetch_agent.
 For all other queries, respond directly as a helpful assistant.
 
 IMPORTANT: your final response should answer the user's query. Use the agents response to answer the user's query if necessary. Avoid returning control-transfer notes like 'Transferring back to supervisor' — return the substantive answer instead.
@@ -92,6 +106,21 @@ Examples of swap queries to delegate:
 - I wanna make a swap
 - What are the available tokens for swapping?
 - I want to swap 100 USD for AVAX
+
+Examples of ICP queries to delegate:
+- "How do I stake ICP tokens?"
+- "I want to swap ICP for ckBTC"
+- "Show me my ICP staking status"
+- "Create a plan to stake 5 ICP for 30 days"
+- "What's the Bitcoin balance of address bc1q8sxz..."
+- "Check Bitcoin UTXOs for this address"
+- "What are current Bitcoin network fees?"
+
+Examples of Fetch.ai advisor queries to delegate:
+- "Is this a good time to buy AVAX?"
+- "What position size should I use?"
+- "Analyze market timing for ICP"
+- "What are the expected fees for this swap?"
 
 {database_examples}
 

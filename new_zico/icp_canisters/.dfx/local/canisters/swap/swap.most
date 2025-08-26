@@ -1,0 +1,28 @@
+// Version: 1.0.0
+type Pair = {tokenA : Token; tokenB : Token};
+type Pool =
+  {
+    fee_bps : Nat;
+    reserveA_e8s : Nat;
+    reserveB_e8s : Nat;
+    tokenA : Token;
+    tokenB : Token;
+    total_supply : Nat
+  };
+type SwapReceipt =
+  {
+    amount_in_e8s : Nat;
+    amount_out_e8s : Nat;
+    fee_e8s : Nat;
+    owner : Principal;
+    pair : Pair;
+    swap_id : Nat;
+    timestamp : Int
+  };
+type Token = {#CHAT; #ICP; #ckBTC; #ckETH};
+actor {
+  stable var initialized : Bool;
+  stable var next_swap_id : Nat;
+  stable var pools_stable : [(Text, Pool)];
+  stable var swaps_stable : [(Nat, SwapReceipt)]
+};

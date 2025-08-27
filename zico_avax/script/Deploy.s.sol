@@ -4,6 +4,7 @@ pragma solidity ^0.8.13;
 import "forge-std/Script.sol";
 import "../src/Analysis.sol";
 import "../src/Swap.sol";
+import "../src/Validation.sol";
 
 contract DeployScript is Script {
     function run() external {
@@ -14,6 +15,9 @@ contract DeployScript is Script {
 
         Swap swap = new Swap();
         console.log("Swap deployed at:", address(swap));
+
+        Validation validation = new Validation();
+        console.log("Validation deployed at:", address(validation));
 
         vm.stopBroadcast();
     }

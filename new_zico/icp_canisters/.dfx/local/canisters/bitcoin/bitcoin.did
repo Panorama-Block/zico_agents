@@ -1,0 +1,29 @@
+type Result = 
+ variant {
+   err: text;
+   ok;
+ };
+type BitcoinAddress = text;
+service : {
+  add_mock_balance: (BitcoinAddress, nat64) -> (Result);
+  get_mock_balance: (BitcoinAddress) -> (opt nat64) query;
+  http_request:
+   (record {
+      body: vec nat8;
+      headers: vec record {
+                     text;
+                     text;
+                   };
+      method: text;
+      url: text;
+    }) ->
+   (record {
+      body: vec nat8;
+      headers: vec record {
+                     text;
+                     text;
+                   };
+      status_code: nat16;
+    }) query;
+  list_mock_addresses: () -> (vec BitcoinAddress) query;
+}

@@ -1,0 +1,57 @@
+type BitcoinAddress = text;
+
+type UTXO = record {
+  txid: text;
+  vout: nat;
+  value: nat64;
+  height: opt nat;
+};
+
+type Balance = record {
+  address: BitcoinAddress;
+  balance: nat64;
+  unconfirmed_balance: nat64;
+  final_balance: nat64;
+};
+
+type FeePercentiles = record {
+  percentile_1: nat64;
+  percentile_5: nat64;
+  percentile_10: nat64;
+  percentile_25: nat64;
+  percentile_50: nat64;
+  percentile_75: nat64;
+  percentile_90: nat64;
+  percentile_95: nat64;
+  percentile_99: nat64;
+};
+
+type P2PKHAddress = record {
+  address: BitcoinAddress;
+  public_key: text;
+};
+
+type Result = variant {
+  Ok: ();
+  Err: text;
+};
+
+type HttpRequest = record {
+  url: text;
+  method: text;
+  body: vec nat8;
+  headers: vec record { text; text };
+};
+
+type HttpResponse = record {
+  status_code: nat16;
+  headers: vec record { text; text };
+  body: vec nat8;
+};
+
+service : {
+  http_request: (HttpRequest) -> (HttpResponse) query;
+  add_mock_balance: (BitcoinAddress, nat64) -> (Result);
+  get_mock_balance: (BitcoinAddress) -> (opt nat64) query;
+  list_mock_addresses: () -> (vec BitcoinAddress) query;
+}

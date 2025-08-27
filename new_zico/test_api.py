@@ -1,101 +1,96 @@
 #!/usr/bin/env python3
 """
-Test script for Zico Multi-Agent System API
+Teste da API do Database Agent
 """
 
 import requests
 import json
-import time
 
-def test_health_check():
-    """Test the health check endpoint"""
-    try:
-        response = requests.get("http://localhost:8000/")
-        print("✅ Health check:", response.status_code)
-        print("📄 Response:", response.json())
-        return True
-    except Exception as e:
-        print("❌ Health check failed:", e)
-        return False
-
-def test_chat_endpoint():
-    """Test the chat endpoint"""
-    try:
-        data = {
-            "message": "Hello, how are you?",
-            "user_id": "test_user",
-            "conversation_id": "test_conv"
-        }
-        
-        response = requests.post(
-            "http://localhost:8000/chat",
-            json=data,
-            headers={"Content-Type": "application/json"}
-        )
-        
-        print("✅ Chat endpoint:", response.status_code)
-        print("📄 Response:", json.dumps(response.json(), indent=2))
-        return True
-    except Exception as e:
-        print("❌ Chat endpoint failed:", e)
-        return False
-
-def test_crypto_query():
-    """Test crypto-related query"""
-    try:
-        data = {
-            "message": "What is the price of Bitcoin?",
-            "user_id": "test_user",
-            "conversation_id": "test_conv"
-        }
-        
-        response = requests.post(
-            "http://localhost:8000/chat",
-            json=data,
-            headers={"Content-Type": "application/json"}
-        )
-        
-        print("✅ Crypto query:", response.status_code)
-        print("📄 Response:", json.dumps(response.json(), indent=2))
-        return True
-    except Exception as e:
-        print("❌ Crypto query failed:", e)
-        return False
-
-def main():
-    """Run all tests"""
-    print("🧪 Testing Zico Multi-Agent System API")
-    print("=" * 50)
+def test_api():
+    """Testa a API do sistema."""
     
-    # Wait a bit for server to start
-    print("⏳ Waiting for server to be ready...")
-    time.sleep(2)
+    print("🌐 Testando API do Zico Agent...")
+    print("=" * 40)
     
-    # Run tests
-    tests = [
-        ("Health Check", test_health_check),
-        ("Chat Endpoint", test_chat_endpoint),
-        ("Crypto Query", test_crypto_query)
+    # URL base da API
+    base_url = "http://localhost:8000"
+    
+    # Teste 1: Health check
+    print("🔍 Teste 1: Health check")
+    try:
+        response = requests.get(f"{base_url}/health")
+        print(f"Status: {response.status_code}")
+        print(f"Resposta: {response.json()}")
+    except Exception as e:
+        print(f"❌ Erro: {e}")
+    
+    print("-" * 40)
+    
+    # Teste 2: Chat com consulta de banco
+    print("🔍 Teste 2: Chat com consulta de banco")
+    
+    test_data = {
+        "messages": [
+            {
+                "role": "user",
+                "content": "Mostre-me os top 5 criptomoedas por preço"
+            }
+        ]
+    }
+    
+    try:
+        response = requests.post(f"{base_url}/chat", json=test_data)
+        print(f"Status: {response.status_code}")
+        
+        if response.status_code == 200:
+            result = response.json()
+            print("✅ Resposta da API:")
+            print(json.dumps(result, indent=2, ensure_ascii=False))
+        else:
+            print(f"❌ Erro: {response.text}")
+            
+    except requests.exceptions.ConnectionError:
+        print("❌ Erro: Não foi possível conectar à API.")
+        print("Certifique-se de que o servidor está rodando com:")
+        print("python -m uvicorn src.app:app --reload --host 0.0.0.0 --port 8000")
+    except Exception as e:
+        print(f"❌ Erro: {e}")
+    
+    print("-" * 40)
+    
+    # Teste 3: Outras consultas
+    print("🔍 Teste 3: Outras consultas")
+    
+    queries = [
+        "Qual é o preço do Bitcoin?",
+        "Quantas transações temos na base?",
+        "Mostre-me o floor price das NFTs"
     ]
     
-    results = []
-    for test_name, test_func in tests:
-        print(f"\n🔍 Running {test_name}...")
-        result = test_func()
-        results.append((test_name, result))
-    
-    # Summary
-    print("\n" + "=" * 50)
-    print("📊 Test Results:")
-    for test_name, result in results:
-        status = "✅ PASS" if result else "❌ FAIL"
-        print(f"  {test_name}: {status}")
-    
-    all_passed = all(result for _, result in results)
-    if all_passed:
-        print("\n🎉 All tests passed! Your system is working correctly.")
-    else:
-        print("\n⚠️  Some tests failed. Check the server logs for details.")
+    for i, query in enumerate(queries, 1):
+        print(f"\n📝 Consulta {i}: {query}")
+        
+        test_data = {
+            "messages": [
+                {
+                    "role": "user",
+                    "content": query
+                }
+            ]
+        }
+        
+        try:
+            response = requests.post(f"{base_url}/chat", json=test_data)
+            
+            if response.status_code == 200:
+                result = response.json()
+                print(f"✅ Agente: {result.get('agent', 'N/A')}")
+                print(f"📄 Resposta: {result.get('response', 'N/A')[:200]}...")
+            else:
+                print(f"❌ Erro: {response.text}")
+                
+        except Exception as e:
+            print(f"❌ Erro: {e}")
 
 if __name__ == "__main__":
-    main() 
+    test_api() 

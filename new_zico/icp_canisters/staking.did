@@ -1,0 +1,57 @@
+type Token = variant {
+  ICP;
+  ckBTC;
+  ckETH;
+  CHAT;
+};
+
+type StakeView = record {
+  stake_id: nat;
+  token: Token;
+  amount_e8s: nat;
+  start_time: int;
+  duration_s: nat;
+  reward_rate_bps: nat;
+  accumulated_reward_e8s: nat;
+  withdrawable: bool;
+};
+
+type StakeResult = record {
+  stake_id: nat;
+  started_at: int;
+};
+
+type WithdrawResult = record {
+  principal_returned_e8s: nat;
+  reward_e8s: nat;
+};
+
+type StakingParams = record {
+  min_stake_amount_e8s: nat;
+  min_duration_s: nat;
+  max_duration_s: nat;
+  reward_rates: vec record { Token; nat };
+};
+
+type Result = variant {
+  Ok: StakeResult;
+  Err: text;
+};
+
+type WithdrawResultType = variant {
+  Ok: WithdrawResult;
+  Err: text;
+};
+
+type ParamsResultType = variant {
+  Ok: StakingParams;
+  Err: text;
+};
+
+service : {
+  start_staking: (amount_e8s: nat, duration_s: nat) -> (Result);
+  get_stake_status: (user: opt principal) -> (opt record { stakes: vec StakeView }) query;
+  withdraw_stake: (stake_id: nat) -> (WithdrawResultType);
+  params: () -> (StakingParams) query;
+  set_params: (StakingParams) -> (ParamsResultType);
+}

@@ -1,0 +1,79 @@
+type WithdrawResult = 
+ record {
+   principal_returned_e8s: nat;
+   reward_e8s: nat;
+ };
+type Token = 
+ variant {
+   CHAT;
+   ICP;
+   ckBTC;
+   ckETH;
+ };
+type StakingParams = 
+ record {
+   max_duration_s: nat;
+   min_duration_s: nat;
+   min_stake_amount_e8s: nat;
+   reward_rates: vec record {
+                       Token;
+                       nat;
+                     };
+ };
+type StakeView = 
+ record {
+   accumulated_reward_e8s: nat;
+   amount_e8s: nat;
+   duration_s: nat;
+   reward_rate_bps: nat;
+   stake_id: nat;
+   start_time: int;
+   token: Token;
+   withdrawable: bool;
+ };
+type StakeResult = 
+ record {
+   stake_id: nat;
+   started_at: int;
+ };
+type Result_2 = 
+ variant {
+   err: text;
+   ok;
+ };
+type Result_1 = 
+ variant {
+   err: text;
+   ok: StakeResult;
+ };
+type Result = 
+ variant {
+   err: text;
+   ok: WithdrawResult;
+ };
+service : {
+  get_stake_status: (opt principal) ->
+   (opt record {stakes: vec StakeView;}) query;
+  http_request:
+   (record {
+      body: vec nat8;
+      headers: vec record {
+                     text;
+                     text;
+                   };
+      method: text;
+      url: text;
+    }) ->
+   (record {
+      body: vec nat8;
+      headers: vec record {
+                     text;
+                     text;
+                   };
+      status_code: nat16;
+    }) query;
+  params: () -> (StakingParams) query;
+  set_params: (StakingParams) -> (Result_2);
+  start_staking: (nat, nat) -> (Result_1);
+  withdraw_stake: (nat) -> (Result);
+}

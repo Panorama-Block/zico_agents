@@ -1,0 +1,24 @@
+// Version: 1.0.0
+type StakePosition =
+  {
+    amount_e8s : Nat;
+    duration_s : Nat;
+    owner : Principal;
+    reward_rate_bps : Nat;
+    stake_id : Nat;
+    start_time : Int;
+    token : Token;
+    withdrawn : Bool
+  };
+type Token = {#CHAT; #ICP; #ckBTC; #ckETH};
+actor {
+  stable var next_stake_id : Nat;
+  stable var params_stable :
+    {
+      max_duration_s : Nat;
+      min_duration_s : Nat;
+      min_stake_amount_e8s : Nat;
+      reward_rates : [(Token, Nat)]
+    };
+  stable var stakes_stable : [(Nat, StakePosition)]
+};

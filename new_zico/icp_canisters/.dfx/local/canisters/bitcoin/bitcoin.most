@@ -1,0 +1,5 @@
+// Version: 1.0.0
+type BitcoinAddress = Text;
+actor {
+  stable var mock_balances : [(BitcoinAddress, Nat64)]
+};

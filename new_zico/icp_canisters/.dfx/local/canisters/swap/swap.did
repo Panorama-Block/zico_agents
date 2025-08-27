@@ -1,0 +1,89 @@
+type Token = 
+ variant {
+   CHAT;
+   ICP;
+   ckBTC;
+   ckETH;
+ };
+type SwapView = 
+ record {
+   amount_in_e8s: nat;
+   amount_out_e8s: nat;
+   fee_e8s: nat;
+   pair: Pair;
+   swap_id: nat;
+   when: int;
+ };
+type SwapReceipt = 
+ record {
+   amount_in_e8s: nat;
+   amount_out_e8s: nat;
+   fee_e8s: nat;
+   owner: principal;
+   pair: Pair;
+   swap_id: nat;
+   timestamp: int;
+ };
+type SwapQuote = 
+ record {
+   amount_out_e8s: nat;
+   fee_bps: nat;
+   price_impact_bps: nat;
+   route: vec text;
+ };
+type Result_3 = 
+ variant {
+   err: text;
+   ok: nat;
+ };
+type Result_2 = 
+ variant {
+   err: text;
+   ok: SwapReceipt;
+ };
+type Result_1 = 
+ variant {
+   err: text;
+   ok: RateView;
+ };
+type Result = 
+ variant {
+   err: text;
+   ok: SwapQuote;
+ };
+type RateView = 
+ record {
+   fee_bps: nat;
+   mid_e8s: nat;
+   spread_bps: nat;
+ };
+type Pair = 
+ record {
+   tokenA: Token;
+   tokenB: Token;
+ };
+service : {
+  add_liquidity: (Pair, nat, nat) -> (Result_3);
+  create_swap: (Pair, nat, nat) -> (Result_2);
+  get_rates: (Pair) -> (Result_1) query;
+  http_request:
+   (record {
+      body: vec nat8;
+      headers: vec record {
+                     text;
+                     text;
+                   };
+      method: text;
+      url: text;
+    }) ->
+   (record {
+      body: vec nat8;
+      headers: vec record {
+                     text;
+                     text;
+                   };
+      status_code: nat16;
+    }) query;
+  list_swaps: (principal, opt nat) -> (vec SwapView) query;
+  quote: (Pair, nat) -> (Result) query;
+}

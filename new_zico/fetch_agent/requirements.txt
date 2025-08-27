@@ -1,0 +1,6 @@
+# Fetch.ai uAgents requirements
+uagents>=0.12.0
+requests>=2.31.0
+
+# Para desenvolvimento local
+python-dotenv>=1.0.0

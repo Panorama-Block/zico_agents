@@ -1,0 +1,32 @@
+{
+  "version": 1,
+  "canisters": {
+    "staking": {
+      "type": "motoko",
+      "main": "src/staking/main.mo"
+    },
+    "swap": {
+      "type": "motoko", 
+      "main": "src/swap/main.mo"
+    },
+    "bitcoin": {
+      "type": "motoko",
+      "main": "src/bitcoin/main.mo"
+    }
+  },
+  "networks": {
+    "local": {
+      "bind": "127.0.0.1:8000",
+      "type": "ephemeral"
+    },
+    "ic": {
+      "providers": ["https://ic0.app"],
+      "type": "persistent"
+    }
+  },
+  "defaults": {
+    "build": {
+      "packtool": ""
+    }
+  }
+}

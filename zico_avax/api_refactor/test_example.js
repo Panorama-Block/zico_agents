@@ -2,7 +2,7 @@ const { ethers } = require('ethers');
 
 // Configurações para teste
 const API_BASE_URL = 'http://localhost:3001';
-const WALLET_ADDRESS = '0x1234567890abcdef1234567890abcdef1234567890abcdef1234567890abcdef'; // Endereço da sua wallet
+const WALLET_ADDRESS = '0x6B509c04e3caA2207b8f2A60A067a8ddED03b8d0'; // Endereço da sua wallet
 const RPC_URL = 'https://api.avax.network/ext/bc/C/rpc';
 
 // Endereços de tokens comuns na Avalanche

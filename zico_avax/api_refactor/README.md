@@ -8,9 +8,10 @@ Uma API completa para operações de swap na rede Avalanche, suportando o protoc
 - 🏆 **Preços em Tempo Real**: Obtém preços atualizados do Trader Joe
 - 🚀 **Execução de Swaps**: Executa swaps via smart wallet do frontend
 - 📊 **Preços em Tempo Real**: Integração com CoinGecko para preços de mercado
-- 🔐 **Segurança**: Autenticação por assinatura de wallet
+- 🔐 **Segurança**: Autenticação por assinatura de smart wallet (sem chaves privadas)
 - ⚡ **Performance**: Cache inteligente e rate limiting
 - 🛡️ **Segurança**: Middleware de validação e sanitização
+- 🚫 **Sem Chaves Privadas**: API não armazena ou usa chaves privadas
 
 ## 🏗️ Arquitetura
 
@@ -258,10 +259,10 @@ GET /config
 
 ## 🔐 Autenticação
 
-A API usa autenticação por assinatura de wallet. Para autenticar uma requisição:
+A API usa autenticação por assinatura de smart wallet. Para autenticar uma requisição:
 
 1. **Crie uma mensagem**: `timestamp:1234567890`
-2. **Assine com sua wallet privada**
+2. **Assine com sua smart wallet do frontend**
 3. **Inclua no body**:
    - `address`: Endereço da sua wallet
    - `signature`: Assinatura da mensagem
@@ -271,16 +272,17 @@ A API usa autenticação por assinatura de wallet. Para autenticar uma requisiç
 ### Exemplo de Autenticação (JavaScript)
 
 ```javascript
-import { ethers } from 'ethers';
-
+// Em produção, a assinatura viria do smart wallet do frontend
 async function createAuthenticatedRequest() {
-  const wallet = new ethers.Wallet('YOUR_PRIVATE_KEY');
   const timestamp = Date.now();
   const message = `timestamp:${timestamp}`;
-  const signature = await wallet.signMessage(message);
+  
+  // A assinatura é feita pelo smart wallet do frontend
+  // Aqui simulamos apenas para exemplo
+  const signature = await smartWallet.signMessage(message);
   
   const requestBody = {
-    address: wallet.address,
+    address: smartWallet.address,
     signature: signature,
     message: message,
     timestamp: timestamp,
@@ -312,8 +314,8 @@ async function createAuthenticatedRequest() {
 |----------|-----------|---------|
 | `RPC_URL_AVALANCHE` | RPC da rede Avalanche | `https://api.avax.network/ext/bc/C/rpc` |
 | `RPC_URL_FUJI` | RPC da testnet Fuji | `https://api.avax-test.network/ext/bc/C/rpc` |
-| `WALLET_PRIVATE_KEY` | Chave privada da wallet | **Obrigatório** |
-| `WALLET_ADDRESS` | Endereço da wallet | **Obrigatório** |
+| `WALLET_ADDRESS` | Endereço da wallet (opcional) | Opcional |
+
 | `PORT` | Porta do servidor | `3001` |
 | `NODE_ENV` | Ambiente de execução | `development` |
 
@@ -356,6 +358,8 @@ curl -X POST http://localhost:3001/swap/price/traderjoe \
   }'
 ```
 
+**Nota**: A assinatura deve vir do smart wallet do frontend. Em produção, não é necessário configurar chaves privadas na API.
+
 ## 📊 Monitoramento
 
 ### Logs
@@ -394,6 +398,7 @@ Para debug detalhado, defina `NODE_ENV=development` no arquivo `.env`.
 
 ### Boas Práticas
 - ✅ **NUNCA** compartilhe chaves privadas
+- ✅ **NÃO** configure chaves privadas na API (use smart wallets do frontend)
 - ✅ Use HTTPS em produção
 - ✅ Configure CORS adequadamente
 - ✅ Monitore logs de acesso
@@ -435,3 +440,5 @@ Este projeto está licenciado sob a licença MIT - veja o arquivo [LICENSE](LICE
 ---
 
 **⚠️ Aviso**: Esta API é para fins educacionais e de desenvolvimento. Use em produção por sua conta e risco. Sempre teste em testnet antes de usar na mainnet.
+
+**🔐 Segurança**: A API não armazena chaves privadas. Todas as transações são assinadas pelo smart wallet do frontend e enviadas como transações assinadas.

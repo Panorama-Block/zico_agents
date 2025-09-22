@@ -1,38 +1,38 @@
-# 🚀 New Zico - Plataforma Multi-Agent DeFi com ICP & Fetch.ai
+# 🚀 New Zico - Multi-Agent DeFi Platform with ICP & Fetch.ai
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 [![Internet Computer](https://img.shields.io/badge/Internet%20Computer-ICP-blue)](https://internetcomputer.org/)
 [![Fetch.ai](https://img.shields.io/badge/Fetch.ai-ASI--One-green)](https://fetch.ai/)
 [![Python](https://img.shields.io/badge/Python-3.12+-blue)](https://python.org/)
 
-**New Zico** é uma plataforma revolucionária que combina **inteligência artificial multi-agent**, **Internet Computer Protocol (ICP)** e **Fetch.ai** para criar a experiência DeFi mais avançada e intuitiva do mercado. Nossa arquitetura permite operações blockchain complexas através de conversas em linguagem natural, análises de mercado em tempo real e execução segura de transações.
+**New Zico** is a revolutionary platform that combines **multi-agent artificial intelligence**, **Internet Computer Protocol (ICP)**, and **Fetch.ai** to create the most advanced and intuitive DeFi experience in the market. Our architecture enables complex blockchain operations through natural language conversations, real-time market analysis, and secure transaction execution.
 
-## 🎯 Visão de Negócio
+## 🎯 Business Vision
 
-### Problema Resolvido
-- **Complexidade Técnica**: DeFi é intimidante para usuários não-técnicos
-- **Fragmentação**: Múltiplas ferramentas para análise, execução e monitoramento  
-- **Análise Manual**: Decisões baseadas em intuição ao invés de dados
-- **Experiência Fragmentada**: Wallets, DEXs, analytics em plataformas separadas
+### Problem Solved
+- **Technical Complexity**: DeFi is intimidating for non-technical users
+- **Fragmentation**: Multiple tools for analysis, execution, and monitoring
+- **Manual Analysis**: Decisions based on intuition instead of data
+- **Fragmented Experience**: Wallets, DEXs, analytics on separate platforms
 
-### Nossa Solução
-- 🤖 **Interface Conversacional**: "Fazer stake de 10 ICP por 60 dias" → Transação Candid pronta
-- 📊 **Análise Automatizada**: Fetch.ai para timing, sizing e fee optimization
-- 🔗 **Execução Nativa**: Internet Computer para operações determinísticas e seguras
-- 🎯 **Tudo Integrado**: Uma plataforma, múltiplas blockchains, experiência unificada
+### Our Solution
+- 🤖 **Conversational Interface**: "Stake 10 ICP for 60 days" → Ready Candid transaction
+- 📊 **Automated Analysis**: Fetch.ai for timing, sizing, and fee optimization
+- 🔗 **Native Execution**: Internet Computer for deterministic and secure operations
+- 🎯 **Everything Integrated**: One platform, multiple blockchains, unified experience
 
-### Diferencial Competitivo
-1. **Primeira integração nativa ICP + Fetch.ai do mercado**
-2. **Agents especializados para cada categoria de operação**
-3. **Fallbacks automáticos garantem 99.9% de disponibilidade**
-4. **Interface que qualquer pessoa pode usar, sem conhecimento técnico**
+### Competitive Advantage
+1. **First native ICP + Fetch.ai integration in the market**
+2. **Specialized agents for each operation category**
+3. **Automatic fallbacks ensure 99.9% availability**
+4. **Interface anyone can use, without technical knowledge**
 
-## 🏗️ Arquitetura Técnica
+## 🏗️ Technical Architecture
 
-### Stack Principal
+### Main Stack
 ```mermaid
 graph TB
-    User[👤 Usuário] --> Frontend[🌐 Frontend Next.js]
+    User[👤 User] --> Frontend[🌐 Frontend Next.js]
     
     Frontend --> |REST API| Backend[🔧 New Zico Backend]
     Frontend --> |Sign TX| Plug[🔌 Plug Wallet / II]
@@ -63,15 +63,15 @@ graph TB
     FeeAnalyzer --> |Chat Protocol| ASI1
 ```
 
-### Componentes Core
+### Core Components
 
-#### 1. **Backend Multi-Agent (FastAPI + LangGraph)**
-- **Supervisor Agent**: Roteamento inteligente baseado em intenção
-- **ICP Agent**: Gera planos Candid, consultas read-only, operações Bitcoin
-- **Fetch.ai Agent**: Análises de mercado, timing, sizing, fee optimization
-- **Crypto Data Agent**: Preços real-time, TVL, floor prices, métricas DeFi
-- **Swap Agent**: Operações multi-chain via agregadores
-- **Database Agent**: Analytics históricos e portfolio tracking
+#### 1. **Multi-Agent Backend (FastAPI + LangGraph)**
+- **Supervisor Agent**: Intelligent routing based on intention
+- **ICP Agent**: Generates Candid plans, read-only queries, Bitcoin operations
+- **Fetch.ai Agent**: Market analysis, timing, sizing, fee optimization
+- **Crypto Data Agent**: Real-time prices, TVL, floor prices, DeFi metrics
+- **Swap Agent**: Multi-chain operations via aggregators
+- **Database Agent**: Historical analytics and portfolio tracking
 
 #### 2. **ICP Canisters (Motoko)**
 ```
@@ -85,12 +85,12 @@ icp_canisters/
 └── bitcoin.did            # Interface Candid Bitcoin
 ```
 
-**Recursos ICP:**
-- ✅ **Staking**: Múltiplos tokens com APY dinâmico (5-8%)
-- ✅ **Swap**: AMM com pools inicializados e slippage control
-- ✅ **Bitcoin Integration**: API HTTP para operações Bitcoin via ICP
-- ✅ **HTTP Outcalls**: Queries diretas via REST endpoints
-- ✅ **Deterministic**: Resultados consistentes e verificáveis
+**ICP Features:**
+- ✅ **Staking**: Multiple tokens with dynamic APY (5-8%)
+- ✅ **Swap**: AMM with initialized pools and slippage control
+- ✅ **Bitcoin Integration**: HTTP API for Bitcoin operations via ICP
+- ✅ **HTTP Outcalls**: Direct queries via REST endpoints
+- ✅ **Deterministic**: Consistent and verifiable results
 
 #### 3. **Fetch.ai Agent Network**
 ```
@@ -104,18 +104,18 @@ fetch_agent/
     └── chat_protocol.py  # 💬 ASI:One integration
 ```
 
-**Recursos Fetch.ai:**
-- ✅ **ASI:One LLM**: Análises avançadas via Chat Protocol
-- ✅ **Market Timing**: Score 0-1 baseado em múltiplos indicadores
-- ✅ **Position Sizing**: Kelly Criterion + volatilidade histórica
-- ✅ **Fee Optimization**: Análise multi-chain de custos
-- ✅ **Fallback System**: Dados sintéticos quando APIs offline
+**Fetch.ai Features:**
+- ✅ **ASI:One LLM**: Advanced analysis via Chat Protocol
+- ✅ **Market Timing**: Score 0-1 based on multiple indicators
+- ✅ **Position Sizing**: Kelly Criterion + historical volatility
+- ✅ **Fee Optimization**: Multi-chain cost analysis
+- ✅ **Fallback System**: Synthetic data when APIs are offline
 
-## 🚀 Setup Completo
+## 🚀 Complete Setup
 
-### Pré-requisitos
+### Prerequisites
 ```bash
-# Instalar Node.js 18+, Python 3.12+, DFX
+# Install Node.js 18+, Python 3.12+, DFX
 curl -fsSL https://internetcomputer.org/install.sh | sh
 ```
 
@@ -125,25 +125,25 @@ cd new_zico/icp_canisters
 dfx start --clean --background
 dfx deploy
 
-# Obter IDs dos canisters
+# Get canister IDs
 dfx canister id staking_canister
-dfx canister id swap_canister  
+dfx canister id swap_canister
 dfx canister id bitcoin_service
 ```
 
-### 2. **Configurar Backend**
+### 2. **Configure Backend**
 ```bash
 cd new_zico
 python -m venv venv
 source venv/bin/activate  # Linux/Mac
 pip install -r requirements.txt
 
-# Configurar .env
+# Configure .env
 cp .env.example .env
-nano .env  # Adicionar IDs dos canisters
+nano .env  # Add canister IDs
 ```
 
-**Configurações essenciais (.env):**
+**Essential configurations (.env):**
 ```env
 # ICP Configuration
 ICP_BASE_URL=http://127.0.0.1:4943
@@ -159,17 +159,17 @@ FETCH_ENABLE_FALLBACK=true
 GEMINI_API_KEY=your_gemini_key
 ```
 
-### 3. **Executar Sistema**
+### 3. **Run System**
 ```bash
-# Terminal 1: Backend New Zico
+# Terminal 1: New Zico Backend
 uvicorn src.app:app --reload --port 8000
 
-# Terminal 2: Fetch.ai Agent (opcional)
+# Terminal 2: Fetch.ai Agent (optional)
 cd fetch_agent
 python agent.py
 ```
 
-### 4. **Verificar Instalação**
+### 4. **Verify Installation**
 ```bash
 # Health check
 curl http://localhost:8000/health

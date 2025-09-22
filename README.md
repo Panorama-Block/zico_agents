@@ -174,94 +174,94 @@ python agent.py
 # Health check
 curl http://localhost:8000/health
 
-# Testar ICP integration
+# Test ICP integration
 curl -X POST "http://localhost:8000/chat" \
   -H "Content-Type: application/json" \
   -d '{
-    "message": {"role": "user", "content": "Criar plano stake 5 ICP por 30 dias"},
+    "message": {"role": "user", "content": "Create stake plan 5 ICP for 30 days"},
     "user_id": "test_user"
   }'
 
-# Testar Fetch.ai integration
+# Test Fetch.ai integration
 curl -X POST "http://localhost:8000/chat" \
   -H "Content-Type: application/json" \
   -d '{
-    "message": {"role": "user", "content": "É bom momento para comprar AVAX?"},
+    "message": {"role": "user", "content": "Is it a good time to buy AVAX?"},
     "user_id": "test_user"
   }'
 ```
 
-## 💼 Casos de Uso de Negócio
+## 💼 Business Use Cases
 
-### 1. **DeFi Yield Farming Inteligente**
+### 1. **Intelligent DeFi Yield Farming**
 ```
-Usuário: "Quero fazer yield com 1000 USDC, qual a melhor estratégia?"
+User: "I want to yield farm with 1000 USDC, what's the best strategy?"
 
 New Zico:
-1. 🤖 Fetch.ai analisa condições de mercado
-2. 💰 Crypto Agent busca melhores APYs disponíveis
-3. 🏛️ ICP Agent verifica pools de staking
-4. 🎯 Supervisor recomenda: "Stake 70% ICP (6.5% APY) + 30% ckBTC pool"
-5. ✅ Frontend gera transações Candid prontas para assinar
+1. 🤖 Fetch.ai analyzes market conditions
+2. 💰 Crypto Agent searches for best available APYs
+3. 🏛️ ICP Agent verifies staking pools
+4. 🎯 Supervisor recommends: "Stake 70% ICP (6.5% APY) + 30% ckBTC pool"
+5. ✅ Frontend generates ready-to-sign Candid transactions
 ```
 
-### 2. **Trading com Timing Otimizado**
+### 2. **Optimized Timing Trading**
 ```
-Usuário: "Trocar 10 AVAX por ICP, quando é melhor?"
+User: "Swap 10 AVAX for ICP, when is the best time?"
 
 New Zico:
-1. ⏰ Fetch.ai Timing Advisor: Score 0.85 (favorável)
-2. 📊 Position Sizing: Tamanho ótimo baseado em volatilidade
-3. 💰 Fee Analyzer: Menores custos via ICP DEX vs Avalanche
-4. 🔄 Swap Agent executa via canister ICP
-5. 📈 Database Agent registra para portfolio tracking
+1. ⏰ Fetch.ai Timing Advisor: Score 0.85 (favorable)
+2. 📊 Position Sizing: Optimal size based on volatility
+3. 💰 Fee Analyzer: Lower costs via ICP DEX vs Avalanche
+4. 🔄 Swap Agent executes via ICP canister
+5. 📈 Database Agent records for portfolio tracking
 ```
 
 ### 3. **Bitcoin Operations via ICP**
 ```
-Usuário: "Verificar saldo Bitcoin e otimizar taxas de envio"
+User: "Check Bitcoin balance and optimize transaction fees"
 
 New Zico:
-1. ₿ Bitcoin Canister consulta saldo via HTTP outcalls
-2. 🤖 Fetch.ai analisa fee percentiles da rede Bitcoin
-3. ⏰ Timing Advisor recomenda melhor momento para transação
-4. 💡 Resposta: "Saldo: 0.15 BTC, taxas baixas em 4h, aguardar?"
+1. ₿ Bitcoin Canister queries balance via HTTP outcalls
+2. 🤖 Fetch.ai analyzes Bitcoin network fee percentiles
+3. ⏰ Timing Advisor recommends best transaction timing
+4. 💡 Response: "Balance: 0.15 BTC, low fees in 4h, wait?"
 ```
 
-### 4. **Portfolio Management Automatizado**
+### 4. **Automated Portfolio Management**
 ```
-Usuário: "Rebalancear portfolio para 40% ICP, 30% ckBTC, 30% stables"
+User: "Rebalance portfolio to 40% ICP, 30% ckBTC, 30% stables"
 
 New Zico:
-1. 📊 Database Agent analisa portfolio atual
-2. 🎯 Supervisor calcula trades necessários
-3. 🤖 Fetch.ai otimiza sequência de operações
-4. 🏛️ ICP Agent gera planos para cada swap
-5. ✅ Usuário assina todas as transações de uma vez
+1. 📊 Database Agent analyzes current portfolio
+2. 🎯 Supervisor calculates necessary trades
+3. 🤖 Fetch.ai optimizes operation sequence
+4. 🏛️ ICP Agent generates plans for each swap
+5. ✅ User signs all transactions at once
 ```
 
-## 🔧 Features Técnicas Avançadas
+## 🔧 Advanced Technical Features
 
 ### Internet Computer Integration
-- **HTTP Outcalls**: Consultas diretas sem oracles
+- **HTTP Outcalls**: Direct queries without oracles
 - **Candid Interface**: Type-safe transactions
-- **Deterministic Execution**: Resultados previsíveis
-- **Cross-Chain Bitcoin**: Operações Bitcoin nativas via ICP
-- **Upgrade Transparency**: Canisters auditáveis e upgradeable
+- **Deterministic Execution**: Predictable results
+- **Cross-Chain Bitcoin**: Native Bitcoin operations via ICP
+- **Upgrade Transparency**: Auditable and upgradeable canisters
 
 ### Fetch.ai Network
-- **ASI:One LLM**: Análises contextuais avançadas
-- **uAgents Framework**: Agents autônomos especializados
-- **Chat Protocol**: Comunicação structurada agent-to-agent
-- **Fallback Intelligence**: Operação resiliente mesmo offline
-- **Multi-Modal Analysis**: Texto, dados numéricos, séries temporais
+- **ASI:One LLM**: Advanced contextual analysis
+- **uAgents Framework**: Specialized autonomous agents
+- **Chat Protocol**: Structured agent-to-agent communication
+- **Fallback Intelligence**: Resilient operation even when offline
+- **Multi-Modal Analysis**: Text, numerical data, time series
 
 ### Multi-Agent Architecture
-- **Supervisor Pattern**: Roteamento baseado em intenção semântica
-- **Tool Specialization**: Cada agent domina uma área específica
-- **Parallel Processing**: Operações simultâneas para maior velocidade
-- **Context Sharing**: Informações compartilhadas entre agents
-- **Error Recovery**: Graceful degradation e retry automático
+- **Supervisor Pattern**: Routing based on semantic intention
+- **Tool Specialization**: Each agent masters a specific area
+- **Parallel Processing**: Simultaneous operations for greater speed
+- **Context Sharing**: Information shared between agents
+- **Error Recovery**: Graceful degradation and automatic retry
 
 ## 📊 Métricas de Performance
 
@@ -278,36 +278,36 @@ New Zico:
 - **Decision Quality**: Timing analysis melhora entry/exit points em 25%
 - **Time to Market**: Setup completo em < 30 minutos
 
-## 🛡️ Segurança & Compliance
+## 🛡️ Security & Compliance
 
 ### Security Model
-- ✅ **Client-Side Signing**: Transações assinadas via Plug Wallet/II
-- ✅ **Backend Read-Only**: Servidor nunca acessa private keys
-- ✅ **Input Validation**: Sanitização completa de todos os inputs
-- ✅ **Rate Limiting**: Proteção contra abuse via throttling
-- ✅ **Error Isolation**: Falhas em um agent não afetam outros
+- ✅ **Client-Side Signing**: Transactions signed via Plug Wallet/II
+- ✅ **Backend Read-Only**: Server never accesses private keys
+- ✅ **Input Validation**: Complete sanitization of all inputs
+- ✅ **Rate Limiting**: Protection against abuse via throttling
+- ✅ **Error Isolation**: Failures in one agent don't affect others
 
 ### Privacy & Data
-- ✅ **Local Storage**: Dados sensíveis mantidos client-side
-- ✅ **No KYC Required**: Operação completamente permissionless
-- ✅ **Audit Trail**: Logs detalhados para compliance
-- ✅ **GDPR Compliant**: Dados pessoais processados conforme regulação
+- ✅ **Local Storage**: Sensitive data kept client-side
+- ✅ **No KYC Required**: Completely permissionless operation
+- ✅ **Audit Trail**: Detailed logs for compliance
+- ✅ **GDPR Compliant**: Personal data processed according to regulation
 
-## 🌐 Deploy em Produção
+## 🌐 Production Deployment
 
 ### Mainnet ICP
 ```bash
-# Deploy canisters na IC mainnet
+# Deploy canisters to IC mainnet
 dfx deploy --network ic --with-cycles 1000000000000
 
-# Configurar URLs de produção
+# Configure production URLs
 export ICP_BASE_URL=https://ic0.app
 export ICP_NETWORK=mainnet
 ```
 
 ### Fetch.ai Production
 ```bash
-# Configurar endpoints production
+# Configure production endpoints
 export FETCH_TIMING_URL=https://agentverse.ai/v1/agents/timing-advisor
 export FETCH_SIZING_URL=https://agentverse.ai/v1/agents/sizing-advisor
 export ASI1_API_KEY=production_api_key
@@ -350,9 +350,9 @@ kubectl scale deployment new-zico --replicas=3
 - [ ] 🔮 Cross-chain governance
 - [ ] 🔮 AI-driven market making
 
-## 🤝 Contribuição & Desenvolvimento
+## 🤝 Contribution & Development
 
-### Para Developers
+### For Developers
 ```bash
 # Setup development environment
 git clone <repo>
@@ -373,52 +373,52 @@ flake8 src/
 mypy src/
 ```
 
-### Para Business Partners
-- **White-Label Solutions**: Deploy New Zico com sua marca
-- **API Integration**: Integre nossos agents em sua plataforma
-- **Custom Agents**: Desenvolvemos agents específicos para seu uso case
-- **Consulting**: Expertise em ICP, Fetch.ai e DeFi architecture
+### For Business Partners
+- **White-Label Solutions**: Deploy New Zico with your brand
+- **API Integration**: Integrate our agents into your platform
+- **Custom Agents**: We develop agents specific to your use case
+- **Consulting**: Expertise in ICP, Fetch.ai and DeFi architecture
 
-## 📞 Contato & Suporte
+## 📞 Contact & Support
 
-### Documentação Técnica
+### Technical Documentation
 - **API Docs**: [localhost:8000/docs](http://localhost:8000/docs)
 - **ICP Canisters**: [Candid UI](http://localhost:8000/?canisterId=...)
 - **Fetch.ai Agents**: [Agentverse Dashboard](https://agentverse.ai/)
 
-### Comunidade
+### Community
 - **Discord**: [discord.gg/newzico](#)
 - **Telegram**: [@newzico](#)
 - **Twitter**: [@newzico](#)
 - **GitHub**: [github.com/newzico](#)
 
-### Suporte Técnico
+### Technical Support
 - **Email**: tech@newzico.com
 - **Business**: business@newzico.com
 - **Documentation**: docs.newzico.com
 
 ---
 
-## 🎉 Conclusão
+## 🎉 Conclusion
 
-**New Zico** representa o futuro da interação entre humanos e DeFi. Ao combinar a **robustez do Internet Computer**, a **inteligência da Fetch.ai** e a **flexibilidade de uma arquitetura multi-agent**, criamos uma plataforma que democratiza o acesso a operações financeiras complexas.
+**New Zico** represents the future of human-DeFi interaction. By combining the **robustness of Internet Computer**, the **intelligence of Fetch.ai** and the **flexibility of a multi-agent architecture**, we created a platform that democratizes access to complex financial operations.
 
-### Por que New Zico?
-- 🎯 **Primeiro no mercado** com integração nativa ICP + Fetch.ai
-- 🚀 **Experiência do usuário** revolucionária via linguagem natural
-- 💰 **ROI comprovado** através de otimização automatizada
-- 🔐 **Segurança máxima** com assinatura client-side
-- 🌍 **Escalabilidade global** via arquitetura distribuída
+### Why New Zico?
+- 🎯 **First in market** with native ICP + Fetch.ai integration
+- 🚀 **Revolutionary user experience** via natural language
+- 💰 **Proven ROI** through automated optimization
+- 🔐 **Maximum security** with client-side signing
+- 🌍 **Global scalability** via distributed architecture
 
-### O Futuro é Agora
-Com New Zico, qualquer pessoa pode:
-- Fazer stake de criptomoedas falando em português
-- Receber análises de mercado em tempo real
-- Otimizar automaticamente custos de transação
-- Acessar Bitcoin através do Internet Computer
-- Gerenciar portfolios complexos com simplicidade
+### The Future is Now
+With New Zico, anyone can:
+- Stake cryptocurrencies speaking in natural language
+- Receive real-time market analysis
+- Automatically optimize transaction costs
+- Access Bitcoin through Internet Computer
+- Manage complex portfolios with simplicity
 
-**Junte-se à revolução DeFi. O futuro das finanças descentralizadas começa aqui.**
+**Join the DeFi revolution. The future of decentralized finance starts here.**
 
 ---
 

@@ -1,0 +1,47 @@
+[
+  {
+    "test": "Configuration Validation",
+    "status": "\u2705 PASS",
+    "message": "Configura\u00e7\u00e3o v\u00e1lida - Base: https://ic0.app",
+    "details": null,
+    "timestamp": 1758573012.6128333
+  },
+  {
+    "test": "Timeout Configuration",
+    "status": "\u2705 PASS",
+    "message": "Timeout de 15s est\u00e1 adequado",
+    "details": null,
+    "timestamp": 1758573012.6128516
+  },
+  {
+    "test": "URL Utils Integration",
+    "status": "\u2705 PASS",
+    "message": "Utilit\u00e1rios de URL funcionando corretamente",
+    "details": null,
+    "timestamp": 1758573012.6128857
+  },
+  {
+    "test": "Query Stake Status",
+    "status": "\u2705 PASS",
+    "message": "Fun\u00e7\u00e3o funcional (erro esperado: Falha na consulta: 400 Client Error: Bad Request f...)",
+    "details": null,
+    "timestamp": 1758573013.805311
+  },
+  {
+    "test": "Get Canister Info",
+    "status": "\u2705 PASS",
+    "message": "Info do canister funcional - 4 m\u00e9todos",
+    "details": {
+      "canisterId": "rdmx6-jaaaa-aaaah-qd...",
+      "methodCount": 4
+    },
+    "timestamp": 1758573013.8099885
+  },
+  {
+    "test": "ICP Agent Tools Import",
+    "status": "\u274c FAIL",
+    "message": "Erro ao importar tools: No module named 'langchain_core'",
+    "details": null,
+    "timestamp": 1758573013.837767
+  }
+]

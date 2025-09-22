@@ -1,4 +1,0 @@
-chainlink-brownie-contracts/=lib/chainlink-brownie-contracts/
-chainlink/=lib/chainlink/
-forge-std/=lib/forge-std/src/
-v2-core/=lib/v2-core/

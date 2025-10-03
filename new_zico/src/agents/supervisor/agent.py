@@ -1,10 +1,11 @@
 from langchain_google_genai import ChatGoogleGenerativeAI, GoogleGenerativeAIEmbeddings
 from langgraph_supervisor import create_supervisor
 from src.agents.config import Config
-from typing import TypedDict, Literal, List, Any
+from typing import TypedDict, Literal, List, Any, Tuple
 import re
 import json
 from src.agents.metadata import metadata
+from src.agents.crypto_data.config import Config as CryptoConfig
 
 # Agents
 from src.agents.crypto_data.agent import CryptoDataAgent
@@ -24,9 +25,11 @@ embeddings = GoogleGenerativeAIEmbeddings(
     google_api_key=Config.GEMINI_API_KEY
 )
 
+
 class ChatMessage(TypedDict):
     role: Literal["system", "user", "assistant"]
     content: str
+
 
 class Supervisor:
     def __init__(self, llm):
@@ -36,25 +39,60 @@ class Supervisor:
         cryptoDataAgent = cryptoDataAgentClass.agent
 
         agents = [cryptoDataAgent]
-        available_agents_text = "- crypto_agent: Handles cryptocurrency-related queries like price checks, market data, NFT floor prices, DeFi protocol TVL, etc.\n"
+        available_agents_text = (
+            "- crypto_agent: Handles cryptocurrency-related queries like price checks, market data, NFT floor prices, DeFi protocol TVL, etc.\n"
+        )
 
         # Conditionally include database agent
         if is_database_available():
             databaseAgent = DatabaseAgent(llm)
             agents.append(databaseAgent)
-            available_agents_text += "- database_agent: Handles database queries and data analysis. Can search and analyze data from the database.\n"
+            available_agents_text += (
+                "- database_agent: Handles database queries and data analysis. Can search and analyze data from the database.\n"
+            )
         else:
             databaseAgent = None
 
         swapAgent = SwapAgent(llm)
         agents.append(swapAgent.agent)
-        available_agents_text += "- swap_agent: Handles swap operations on the Avalanche network and any other swap question related.\n"
+        available_agents_text += (
+            "- swap_agent: Handles swap operations on the Avalanche network and any other swap question related.\n"
+        )
 
         defaultAgent = DefaultAgent(llm)
-        agents.append(defaultAgent.agent)
+        self.default_agent = defaultAgent.agent
+        agents.append(self.default_agent)
 
         # Track known agent names for response extraction
         self.known_agent_names = {"crypto_agent", "database_agent", "swap_agent", "default_agent"}
+        self.specialized_agents = {"crypto_agent", "database_agent", "swap_agent"}
+        self.failure_markers = (
+            "cannot fulfill",
+            "can't fulfill",
+            "cannot assist",
+            "can't assist",
+            "cannot help",
+            "can't help",
+            "cannot comply",
+            "transfer you",
+            "specialized agent",
+            "no response available",
+            "failed to retrieve",
+            "api at the moment",
+            "handling your request",
+            "crypto_agent is handling",
+            "will provide",
+            "provide the price",
+            "tool error",
+        )
+        self.config_failure_messages = {
+            CryptoConfig.PRICE_FAILURE_MESSAGE.lower(),
+            CryptoConfig.FLOOR_PRICE_FAILURE_MESSAGE.lower(),
+            CryptoConfig.TVL_FAILURE_MESSAGE.lower(),
+            CryptoConfig.FDV_FAILURE_MESSAGE.lower(),
+            CryptoConfig.MARKET_CAP_FAILURE_MESSAGE.lower(),
+            CryptoConfig.API_ERROR_MESSAGE.lower(),
+        }
 
         # Prepare database guidance text to avoid backslashes in f-string expressions
         if databaseAgent:
@@ -99,6 +137,7 @@ Examples of general queries to handle directly:
 - "Hello, how are you?"
 - "What's the weather like?"
 - "Tell me a joke"
+- "What is the biggest poll in Trader Joe?"
 """
 
         self.supervisor = create_supervisor(
@@ -180,7 +219,7 @@ Examples of general queries to handle directly:
             if collected:
                 return " ".join(collected)
         return None
-    
+
     def _extract_payload(self, text: str) -> tuple[dict, str]:
         # Try JSON payload first
         try:
@@ -214,32 +253,8 @@ Examples of general queries to handle directly:
                 return art
         return {}
 
-    def invoke(self, messages: List[ChatMessage]) -> dict:
-        from langchain_core.messages import HumanMessage, SystemMessage, AIMessage
-
-        langchain_messages = []
-        for msg in messages:
-            if msg.get("role") == "user":
-                langchain_messages.append(HumanMessage(content=msg.get("content", "")))
-            elif msg.get("role") == "system":
-                langchain_messages.append(SystemMessage(content=msg.get("content", "")))
-            elif msg.get("role") == "assistant":
-                langchain_messages.append(AIMessage(content=msg.get("content", "")))
-
-        try:
-            response = self.app.invoke({"messages": langchain_messages})
-            print("DEBUG: response", response)
-        except Exception as e:
-            print(f"Error in Supervisor: {e}")
-            return {
-                "messages": [],
-                "agent": "supervisor",
-                "response": "Sorry, an error occurred while processing your request."
-            }
-
+    def _extract_response_from_graph(self, response: Any) -> Tuple[str, str, list]:
         messages_out = response.get("messages", []) if isinstance(response, dict) else []
-
-        # Prefer the last specialized agent message over any router/supervisor meta message
         final_response = None
         final_agent = "supervisor"
 
@@ -254,7 +269,6 @@ Examples of general queries to handle directly:
                 # Prefer sanitized content
                 return sanitized, agent_name
             return None, None
-        
 
         # 1) Try to find the last message from a known specialized agent that is not a handoff/route-back note
         for m in reversed(messages_out):
@@ -286,16 +300,81 @@ Examples of general queries to handle directly:
                 final_response = "No response available"
 
         cleaned_response = final_response or "Sorry, no meaningful response was returned."
-        meta = {}
-        if final_agent == "swap_agent":
-            meta = {'src': 'AVAX', 'dst': 'USDC', 'amount': '100'}
-        elif final_agent == "crypto_agent":
-            meta = metadata.get_crypto_data_agent() or {}
-        else:
-            meta = {}
+        final_agent = final_agent or "supervisor"
+        return final_agent, cleaned_response, messages_out
+
+    def _needs_supervisor_fallback(self, agent_name: str, response_text: str) -> bool:
+        if not response_text:
+            return agent_name in self.specialized_agents
+        lowered = response_text.strip().lower()
+        if lowered in self.config_failure_messages:
+            return True
+        if any(marker in lowered for marker in self.failure_markers):
+            return True
+        if agent_name in self.specialized_agents and not lowered:
+            return True
+        return False
+
+    def _run_default_agent(self, langchain_messages: List[Any]) -> Tuple[str | None, str | None, list]:
+        if not getattr(self, "default_agent", None):
+            return None, None, []
+        try:
+            fallback_response = self.default_agent.invoke({"messages": langchain_messages})
+            print("DEBUG: default agent fallback response", fallback_response)
+        except Exception as exc:
+            print(f"Error invoking default agent fallback: {exc}")
+            return None, None, []
+        fallback_agent, fallback_text, fallback_messages = self._extract_response_from_graph(fallback_response)
+        if not fallback_agent:
+            fallback_agent = "default_agent"
+        return fallback_agent, fallback_text, fallback_messages
+
+    def _build_metadata(self, agent_name: str, messages_out) -> dict:
+        if agent_name == "swap_agent":
+            return {'src': 'AVAX', 'dst': 'USDC', 'amount': '100'}
+        if agent_name == "crypto_agent":
+            tool_meta = self._collect_tool_metadata(messages_out)
+            if tool_meta:
+                metadata.set_crypto_data_agent(tool_meta)
+            return metadata.get_crypto_data_agent() or {}
+        return {}
+
+    def invoke(self, messages: List[ChatMessage]) -> dict:
+        from langchain_core.messages import HumanMessage, SystemMessage, AIMessage
+
+        langchain_messages = []
+        for msg in messages:
+            if msg.get("role") == "user":
+                langchain_messages.append(HumanMessage(content=msg.get("content", "")))
+            elif msg.get("role") == "system":
+                langchain_messages.append(SystemMessage(content=msg.get("content", "")))
+            elif msg.get("role") == "assistant":
+                langchain_messages.append(AIMessage(content=msg.get("content", "")))
+
+        try:
+            response = self.app.invoke({"messages": langchain_messages})
+            print("DEBUG: response", response)
+        except Exception as e:
+            print(f"Error in Supervisor: {e}")
+            return {
+                "messages": [],
+                "agent": "supervisor",
+                "response": "Sorry, an error occurred while processing your request."
+            }
+
+        final_agent, cleaned_response, messages_out = self._extract_response_from_graph(response)
+
+        if self._needs_supervisor_fallback(final_agent, cleaned_response):
+            print("INFO: Fallback triggered for agent", final_agent)
+            fallback_agent, fallback_response, fallback_messages = self._run_default_agent(langchain_messages)
+            if fallback_response:
+                final_agent = fallback_agent or "default_agent"
+                cleaned_response = fallback_response
+                messages_out = fallback_messages
+
+        meta = self._build_metadata(final_agent, messages_out)
         print("meta: ", meta)
         print("cleaned_response: ", cleaned_response)
-
         print("final_agent: ", final_agent)
 
         return {

@@ -1,6 +1,7 @@
 import logging
 import requests
 import json
+from pydantic import BaseModel, Field
 from sklearn.feature_extraction.text import TfidfVectorizer
 from sklearn.metrics.pairwise import cosine_similarity
 from src.agents.crypto_data.config import Config
@@ -385,6 +386,18 @@ def get_coin_market_cap_tool(coin_name: str) -> str:
         return Config.API_ERROR_MESSAGE
 
 
+class _CoinNameArgs(BaseModel):
+    coin_name: str = Field(..., description="Name of the cryptocurrency to look up.")
+
+
+class _NFTNameArgs(BaseModel):
+    nft_name: str = Field(..., description="Name or slug of the NFT collection.")
+
+
+class _ProtocolNameArgs(BaseModel):
+    protocol_name: str = Field(..., description="Name of the DeFi protocol.")
+
+
 def get_tools() -> list[Tool]:
     """
     Build and return the list of LangChain Tools for use in an agent.
@@ -396,6 +409,7 @@ def get_tools() -> list[Tool]:
         Tool(
             name="get_coin_price",
             func=get_coin_price_tool,
+            args_schema=_CoinNameArgs,
             description=(
                 "Use this to get the current USD price of a cryptocurrency. "
                 "Input should be the coin name (e.g. 'bitcoin')."
@@ -404,6 +418,7 @@ def get_tools() -> list[Tool]:
         Tool(
             name="get_nft_floor_price",
             func=get_nft_floor_price_tool,
+            args_schema=_NFTNameArgs,
             description=(
                 "Fetch the floor price of an NFT collection in USD. "
                 "Input should be the NFT name or slug."
@@ -412,6 +427,7 @@ def get_tools() -> list[Tool]:
         Tool(
             name="get_protocol_tvl",
             func=get_protocol_total_value_locked_tool,
+            args_schema=_ProtocolNameArgs,
             description=(
                 "Returns the Total Value Locked (TVL) of a DeFi protocol. "
                 "Input is the protocol name."
@@ -420,6 +436,7 @@ def get_tools() -> list[Tool]:
         Tool(
             name="get_fully_diluted_valuation",
             func=get_fully_diluted_valuation_tool,
+            args_schema=_CoinNameArgs,
             description=(
                 "Get a coin's fully diluted valuation in USD. "
                 "Input the coin's name."
@@ -428,6 +445,7 @@ def get_tools() -> list[Tool]:
         Tool(
             name="get_market_cap",
             func=get_coin_market_cap_tool,
+            args_schema=_CoinNameArgs,
             description=(
                 "Retrieve the market capitalization of a coin in USD. "
                 "Input is the coin's name."

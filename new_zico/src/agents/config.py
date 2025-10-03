@@ -11,7 +11,7 @@ if not gemini_api_key:
 
 class Config:
     # Model configuration
-    GEMINI_MODEL = "gemini-1.5-pro"
+    GEMINI_MODEL = "gemini-2.5-flash"
     GEMINI_EMBEDDING_MODEL = "models/embedding-001"
     GEMINI_API_KEY = gemini_api_key
     

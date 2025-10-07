@@ -17,6 +17,7 @@ from src.models.chatMessage import ChatMessage
 from src.routes.chat_manager_routes import router as chat_manager_router
 from src.service.chat_manager import chat_manager_instance
 from src.agents.crypto_data.tools import get_coingecko_id, get_tradingview_symbol
+from src.agents.metadata import metadata
 
 # Initialize FastAPI app
 app = FastAPI(title="Zico Agent API", version="1.0")
@@ -107,6 +108,7 @@ def _map_agent_type(agent_name: str) -> str:
         "crypto_agent": "crypto data",
         "default_agent": "default",
         "database_agent": "analysis",
+        "search_agent": "realtime search",
         "swap_agent": "token swap",
         "supervisor": "supervisor",
     }
@@ -158,10 +160,16 @@ def chat(request: ChatRequest):
 
             # Build response metadata and enrich with coin info for crypto price queries
             response_metadata = {"supervisor_result": result}
+            swap_meta_snapshot = None
             # Prefer supervisor-provided metadata
             if isinstance(result, dict) and result.get("metadata"):
                 response_metadata.update(result.get("metadata") or {})
-                print("response_metadata: ", response_metadata)
+            elif agent_name == "token swap":
+                swap_meta = metadata.get_swap_agent()
+                if swap_meta:
+                    response_metadata.update(swap_meta)
+                    swap_meta_snapshot = swap_meta
+            print("response_metadata: ", response_metadata)
             
             # Create a ChatMessage from the supervisor response
             response_message = ChatMessage(
@@ -182,12 +190,26 @@ def chat(request: ChatRequest):
                 conversation_id=request.conversation_id,
                 user_id=request.user_id
             )
-            
+
             # Return only the clean response
-            return {
+            response_payload = {
                 "response": result.get("response", "No response available"),
-                "agentName": agent_name
+                "agentName": agent_name,
             }
+            response_meta = result.get("metadata") or {}
+            if agent_name == "token swap" and not response_meta:
+                if swap_meta_snapshot:
+                    response_meta = swap_meta_snapshot
+                else:
+                    swap_meta = metadata.get_swap_agent()
+                    if swap_meta:
+                        response_meta = swap_meta
+                    metadata.set_swap_agent({})
+            if response_meta:
+                response_payload["metadata"] = response_meta
+            if agent_name == "token swap":
+                metadata.set_swap_agent({})
+            return response_payload
         
         return {"response": "No response available", "agent": "supervisor"}
     except Exception as e:

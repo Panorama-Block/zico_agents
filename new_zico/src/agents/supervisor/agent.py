@@ -12,6 +12,7 @@ from src.agents.crypto_data.agent import CryptoDataAgent
 from src.agents.database.agent import DatabaseAgent
 from src.agents.default.agent import DefaultAgent
 from src.agents.swap.agent import SwapAgent
+from src.agents.search.agent import SearchAgent
 from src.agents.database.client import is_database_available
 
 llm = ChatGoogleGenerativeAI(
@@ -40,7 +41,7 @@ class Supervisor:
 
         agents = [cryptoDataAgent]
         available_agents_text = (
-            "- crypto_agent: Handles cryptocurrency-related queries like price checks, market data, NFT floor prices, DeFi protocol TVL, etc.\n"
+            "- crypto_agent: Handles cryptocurrency-related queries like price checks, market data, NFT floor prices, DeFi protocol TVL (don't route to this agent if none of the mention information).\n"
         )
 
         # Conditionally include database agent
@@ -59,13 +60,20 @@ class Supervisor:
             "- swap_agent: Handles swap operations on the Avalanche network and any other swap question related.\n"
         )
 
+        searchAgent = SearchAgent(llm)
+        self.search_agent = searchAgent.agent
+        agents.append(self.search_agent)
+        available_agents_text += (
+            "- search_agent: Uses web search tools for current events and factual lookups.\n"
+        )
+
         defaultAgent = DefaultAgent(llm)
         self.default_agent = defaultAgent.agent
         agents.append(self.default_agent)
 
         # Track known agent names for response extraction
-        self.known_agent_names = {"crypto_agent", "database_agent", "swap_agent", "default_agent"}
-        self.specialized_agents = {"crypto_agent", "database_agent", "swap_agent"}
+        self.known_agent_names = {"crypto_agent", "database_agent", "swap_agent", "search_agent", "default_agent"}
+        self.specialized_agents = {"crypto_agent", "database_agent", "swap_agent", "search_agent"}
         self.failure_markers = (
             "cannot fulfill",
             "can't fulfill",
@@ -73,6 +81,10 @@ class Supervisor:
             "can't assist",
             "cannot help",
             "can't help",
+            "cannot tell",
+            "can't tell",
+            "cannot tell you",
+            "can't tell you",
             "cannot comply",
             "transfer you",
             "specialized agent",
@@ -84,6 +96,20 @@ class Supervisor:
             "will provide",
             "provide the price",
             "tool error",
+            "search service is unavailable",
+            "configure tavily_api_key",
+            "no results found",
+            "unable to",
+            "cannot get",
+            "can't get",
+            "cannot find",
+            "can't find",
+            "could not find",
+            "do not have that information",
+            "don't have that information",
+            "having trouble",
+            "trouble finding",
+            "I can only"
         )
         self.config_failure_messages = {
             CryptoConfig.PRICE_FAILURE_MESSAGE.lower(),
@@ -108,6 +134,16 @@ class Supervisor:
             database_instruction = "Do not delegate to a database agent; answer best-effort without DB access or ask the user to start the database."
             database_examples = ""
 
+        search_instruction = (
+            "When the user asks about breaking news, recent developments, or requests a web lookup, delegate to the search_agent first."
+        )
+        search_examples = (
+            "Examples of search queries to delegate:\n"
+            "- \"What happened with Bitcoin this week?\"\n"
+            "- \"Find the latest Avalanche ecosystem partnerships\"\n"
+            "- \"Who just won the most recent Formula 1 race?\"\n"
+        )
+
         # System prompt to guide the supervisor
         system_prompt = f"""You are a helpful supervisor that routes user queries to the appropriate specialized agents.
 
@@ -116,6 +152,7 @@ Available agents:
 
 When a user asks about cryptocurrency prices, market data, NFTs, or DeFi protocols, delegate to the crypto_agent.
 {database_instruction}
+{search_instruction}
 For all other queries, respond directly as a helpful assistant.
 
 IMPORTANT: your final response should answer the user's query. Use the agents response to answer the user's query if necessary. Avoid returning control-transfer notes like 'Transferring back to supervisor' — return the substantive answer instead.
@@ -131,7 +168,14 @@ Examples of swap queries to delegate:
 - What are the available tokens for swapping?
 - I want to swap 100 USD for AVAX
 
+When a swap conversation is already underway (the user is still providing swap
+details or the swap_agent requested follow-up information), keep routing those
+messages to the swap_agent until it has gathered every field and signals the
+swap intent is ready.
+
 {database_examples}
+
+{search_examples}
 
 Examples of general queries to handle directly:
 - "Hello, how are you?"
@@ -329,9 +373,24 @@ Examples of general queries to handle directly:
             fallback_agent = "default_agent"
         return fallback_agent, fallback_text, fallback_messages
 
+    def _run_search_agent(self, langchain_messages: List[Any]) -> Tuple[str | None, str | None, list]:
+        if not getattr(self, "search_agent", None):
+            return None, None, []
+        try:
+            fallback_response = self.search_agent.invoke({"messages": langchain_messages})
+            print("DEBUG: search agent fallback response", fallback_response)
+        except Exception as exc:
+            print(f"Error invoking search agent fallback: {exc}")
+            return None, None, []
+        fallback_agent, fallback_text, fallback_messages = self._extract_response_from_graph(fallback_response)
+        if not fallback_agent:
+            fallback_agent = "search_agent"
+        return fallback_agent, fallback_text, fallback_messages
+
     def _build_metadata(self, agent_name: str, messages_out) -> dict:
         if agent_name == "swap_agent":
-            return {'src': 'AVAX', 'dst': 'USDC', 'amount': '100'}
+            swap_meta = metadata.get_swap_agent()
+            return swap_meta.copy() if swap_meta else {}
         if agent_name == "crypto_agent":
             tool_meta = self._collect_tool_metadata(messages_out)
             if tool_meta:
@@ -366,7 +425,28 @@ Examples of general queries to handle directly:
 
         if self._needs_supervisor_fallback(final_agent, cleaned_response):
             print("INFO: Fallback triggered for agent", final_agent)
-            fallback_agent, fallback_response, fallback_messages = self._run_default_agent(langchain_messages)
+            fallback_agent = None
+            fallback_response = None
+            fallback_messages: list = []
+
+            if final_agent != "search_agent":
+                search_agent, search_response, search_messages = self._run_search_agent(langchain_messages)
+                if search_response and not self._needs_supervisor_fallback(search_agent or "search_agent", search_response):
+                    fallback_agent = search_agent or "search_agent"
+                    fallback_response = search_response
+                    fallback_messages = search_messages
+                else:
+                    fallback_agent = search_agent
+                    fallback_response = search_response
+                    fallback_messages = search_messages
+
+            if not fallback_response or self._needs_supervisor_fallback(fallback_agent or "", fallback_response):
+                default_agent, default_response, default_messages = self._run_default_agent(langchain_messages)
+                if default_response:
+                    fallback_agent = default_agent or "default_agent"
+                    fallback_response = default_response
+                    fallback_messages = default_messages
+
             if fallback_response:
                 final_agent = fallback_agent or "default_agent"
                 cleaned_response = fallback_response

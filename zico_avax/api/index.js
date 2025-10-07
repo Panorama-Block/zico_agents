@@ -1,7 +1,6 @@
 require("dotenv").config();
 const express = require("express");
 const { ethers } = require("ethers");
-const { ThirdwebSDK } = require("@thirdweb-dev/sdk");
 const cors = require("cors");
 const fs = require("fs");
 
@@ -12,7 +11,6 @@ app.use(express.json());
 
 // Provider (sem chave privada)
 const provider = new ethers.JsonRpcProvider(process.env.RPC_URL);
-const sdk = ThirdwebSDK.fromProvider(provider);
 
 // ----------- Analysis Contract -----------
 const analysisAbi = require("./abi/Analysis.json").abi;

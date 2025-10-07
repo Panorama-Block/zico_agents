@@ -13,18 +13,63 @@ class SwapConfig:
         "avalanche": {
             "AVAX",
             "WAVAX",
+            "UNI",
             "USDC",
             "USDT",
-            "DAI",
+            "AAVE",
             "BTC.B",
+            "JOE",
+            "MIM",
         },
         "ethereum": {
             "ETH",
             "WETH",
             "USDC",
             "USDT",
-            "DAI",
             "WBTC",
+            "AAVE",
+            "UNI",
+            "LINK",
+            "LDO",
+            "USDE",
+            "DAI",
+        },
+        "binance-smart-chain": {
+            "USDT",
+            "USDC",
+            "CAKE",
+            "ADA",
+            "DOGE",
+            "XRP",
+            "DOT",
+            "TUSD",
+        },
+        "polygon": {
+            "USDT",
+            "USDC",
+            "WETH",
+            "DAI",
+            "QUICK",
+            "AAVE",
+            "SAND",
+        },
+        "arbitrum": {
+            "ARB",
+            "USDT",
+            "USDC",
+            "ETH",
+            "GMX",
+        },
+        "base": {
+            "USDC",
+            "ETH",
+            "CBBTC",
+            "AERO",
+        },
+        "optimism": {
+            "USDC",
+            "USDT",
+            "OP",
         },
     }
 
@@ -34,6 +79,17 @@ class SwapConfig:
         "avalanche": "avalanche",
         "ethereum": "ethereum",
         "eth": "ethereum",
+        "ethereum mainnet": "ethereum",
+        "binance smart chain": "binance-smart-chain",
+        "binance-smart-chain": "binance-smart-chain",
+        "bsc": "binance-smart-chain",
+        "bnb": "binance-smart-chain",
+        "polygon": "polygon",
+        "matic": "polygon",
+        "arbitrum": "arbitrum",
+        "arbitrum one": "arbitrum",
+        "base": "base",
+        "optimism": "optimism",
     }
 
     _TOKEN_ALIASES: Dict[str, str] = {
@@ -47,14 +103,35 @@ class SwapConfig:
         "wbtc": "WBTC",
         "eth": "ETH",
         "weth": "WETH",
+        "uni": "UNI",
+        "aave": "AAVE",
+        "joe": "JOE",
+        "mim": "MIM",
+        "link": "LINK",
+        "chainlink": "LINK",
+        "ldo": "LDO",
+        "usde": "USDE",
+        "cake": "CAKE",
+        "ada": "ADA",
+        "doge": "DOGE",
+        "xrp": "XRP",
+        "dot": "DOT",
+        "tusd": "TUSD",
+        "quick": "QUICK",
+        "sand": "SAND",
+        "arb": "ARB",
+        "gmx": "GMX",
+        "cbbtc": "CBBTC",
+        "cb-btc": "CBBTC",
+        "aero": "AERO",
+        "op": "OP",
     }
 
     # Optional allow list of directional routes (canonical network names).
     _SUPPORTED_ROUTES: Set[Tuple[str, str]] = {
-        ("avalanche", "ethereum"),
-        ("ethereum", "avalanche"),
-        ("avalanche", "avalanche"),
-        ("ethereum", "ethereum"),
+        (src, dst)
+        for src in _NETWORK_TOKENS.keys()
+        for dst in _NETWORK_TOKENS.keys()
     }
 
     # ---------- Public helpers ----------

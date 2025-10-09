@@ -1,17 +1,30 @@
 from langchain_google_genai import ChatGoogleGenerativeAI, GoogleGenerativeAIEmbeddings
 from langgraph_supervisor import create_supervisor
-from langgraph.graph import StateGraph, END
-from langchain_core.messages import HumanMessage, SystemMessage, AIMessage
-from typing import TypedDict, Literal, List, Any, Dict, Optional
-import logging
-
 from src.agents.config import Config
-from src.models.chatMessage import AgentType, MessageRole
+from typing import TypedDict, Literal, List, Any, Tuple
+import re
+import json
+from src.agents.metadata import metadata
+from src.agents.crypto_data.config import Config as CryptoConfig
 
 # Agents
 from src.agents.crypto_data.agent import CryptoDataAgent
+from src.agents.database.agent import DatabaseAgent
+from src.agents.default.agent import DefaultAgent
+from src.agents.swap.agent import SwapAgent
+from src.agents.search.agent import SearchAgent
+from src.agents.database.client import is_database_available
 
-logger = logging.getLogger(__name__)
+llm = ChatGoogleGenerativeAI(
+    model=Config.GEMINI_MODEL,
+    temperature=0.7,
+    google_api_key=Config.GEMINI_API_KEY
+)
+
+embeddings = GoogleGenerativeAIEmbeddings(
+    model=Config.GEMINI_EMBEDDING_MODEL,
+    google_api_key=Config.GEMINI_API_KEY
+)
 
 
 class ChatMessage(TypedDict):
@@ -19,282 +32,434 @@ class ChatMessage(TypedDict):
     content: str
 
 
-class ConversationState(TypedDict):
-    """State for LangGraph conversation flow"""
-    messages: List[ChatMessage]
-    current_agent: Optional[str]
-    agent_history: List[Dict[str, Any]]
-    context: Dict[str, Any]
-    user_id: str
-    conversation_id: str
-
-
 class Supervisor:
-    def __init__(self, llm: ChatGoogleGenerativeAI):
+    def __init__(self, llm):
         self.llm = llm
-        self.embeddings = Config.get_embeddings()
-        
-        # Initialize agents
-        self.crypto_data_agent = CryptoDataAgent(llm)
-        
-        # Create the supervisor graph
-        self.supervisor_graph = self._create_supervisor_graph()
-        
-        # Compile the graph
-        self.app = self.supervisor_graph.compile()
 
-    def _create_supervisor_graph(self) -> StateGraph:
-        """Create the LangGraph state graph for supervisor"""
-        
-        # Define the state graph
-        workflow = StateGraph(ConversationState)
-        
-        # Add nodes for different agents
-        workflow.add_node("supervisor", self._supervisor_node)
-        workflow.add_node("crypto_agent", self._crypto_agent_node)
-        workflow.add_node("general_agent", self._general_agent_node)
-        
-        # Add conditional edges
-        workflow.add_conditional_edges(
-            "supervisor",
-            self._route_to_agent,
-            {
-                "crypto_agent": "crypto_agent",
-                "general_agent": "general_agent",
-                "end": END
-            }
+        cryptoDataAgentClass = CryptoDataAgent(llm)
+        cryptoDataAgent = cryptoDataAgentClass.agent
+
+        agents = [cryptoDataAgent]
+        available_agents_text = (
+            "- crypto_agent: Handles cryptocurrency-related queries like price checks, market data, NFT floor prices, DeFi protocol TVL (don't route to this agent if none of the mention information).\n"
         )
-        
-        # Add edges from agents back to supervisor or end
-        workflow.add_edge("crypto_agent", "supervisor")
-        workflow.add_edge("general_agent", "supervisor")
-        
-        # Set entry point
-        workflow.set_entry_point("supervisor")
-        
-        return workflow
 
-    def _supervisor_node(self, state: ConversationState) -> ConversationState:
-        """Supervisor node that analyzes the message and determines routing"""
-        try:
-            # Get the latest user message
-            latest_message = state["messages"][-1] if state["messages"] else None
-            
-            if not latest_message or latest_message["role"] != "user":
-                # No user message, end conversation
-                return state
-            
-            # Analyze the message content
-            content = latest_message["content"].lower()
-            
-            # Update context based on message content
-            context_updates = {}
-            if any(word in content for word in ["bitcoin", "eth", "crypto", "price", "market", "nft", "defi"]):
-                context_updates["crypto_related"] = True
-            if any(word in content for word in ["hello", "hi", "how are you", "weather", "joke"]):
-                context_updates["general_related"] = True
-            
-            # Update state context
-            state["context"].update(context_updates)
-            
-            # Add supervisor analysis to agent history
-            state["agent_history"].append({
-                "agent": "supervisor",
-                "action": "message_analysis",
-                "context_updates": context_updates,
-                "timestamp": "now"
-            })
-            
-            return state
-            
-        except Exception as e:
-            logger.error(f"Error in supervisor node: {e}")
-            return state
+        # Conditionally include database agent
+        if is_database_available():
+            databaseAgent = DatabaseAgent(llm)
+            agents.append(databaseAgent)
+            available_agents_text += (
+                "- database_agent: Handles database queries and data analysis. Can search and analyze data from the database.\n"
+            )
+        else:
+            databaseAgent = None
 
-    def _route_to_agent(self, state: ConversationState) -> str:
-        """Route to appropriate agent based on message content and context"""
-        try:
-            latest_message = state["messages"][-1] if state["messages"] else None
-            
-            if not latest_message:
-                return "end"
-            
-            content = latest_message["content"].lower()
-            context = state["context"]
-            
-            # Check if crypto-related
-            if (context.get("crypto_related") or 
-                any(word in content for word in ["bitcoin", "eth", "crypto", "price", "market", "nft", "defi", "floor price", "tvl"])):
-                return "crypto_agent"
-            
-            # Check if general conversation
-            if (context.get("general_related") or 
-                any(word in content for word in ["hello", "hi", "how are you", "weather", "joke", "help"])):
-                return "general_agent"
-            
-            # Default to general agent
-            return "general_agent"
-            
-        except Exception as e:
-            logger.error(f"Error in routing: {e}")
-            return "general_agent"
+        swapAgent = SwapAgent(llm)
+        agents.append(swapAgent.agent)
+        available_agents_text += (
+            "- swap_agent: Handles swap operations on the Avalanche network and any other swap question related.\n"
+        )
 
-    def _crypto_agent_node(self, state: ConversationState) -> ConversationState:
-        """Crypto agent node"""
-        try:
-            # Get the latest user message
-            latest_message = state["messages"][-1] if state["messages"] else None
-            
-            if not latest_message:
-                return state
-            
-            # Convert messages to LangChain format
-            langchain_messages = []
-            for msg in state["messages"][-5:]:  # Last 5 messages for context
-                if msg["role"] == "user":
-                    langchain_messages.append(HumanMessage(content=msg["content"]))
-                elif msg["role"] == "system":
-                    langchain_messages.append(SystemMessage(content=msg["content"]))
-            
-            # Add system context
-            context_str = ""
-            if state["context"].get("crypto_related"):
-                context_str = "This is a cryptocurrency-related query. Use appropriate crypto tools."
-            
-            if context_str:
-                langchain_messages.insert(0, SystemMessage(content=context_str))
-            
-            # Get response from crypto agent
-            response = self.crypto_data_agent.agent.invoke({"messages": langchain_messages})
-            
-            # Add agent response to messages
-            agent_message = {
-                "role": "assistant",
-                "content": response.get("output", "I couldn't process that crypto query."),
-                "agent": "crypto_agent"
-            }
-            state["messages"].append(agent_message)
-            
-            # Update current agent
-            state["current_agent"] = "crypto_agent"
-            
-            # Add to agent history
-            state["agent_history"].append({
-                "agent": "crypto_agent",
-                "action": "crypto_query_processed",
-                "timestamp": "now"
-            })
-            
-            return state
-            
-        except Exception as e:
-            logger.error(f"Error in crypto agent node: {e}")
-            # Add error message
-            error_message = {
-                "role": "assistant",
-                "content": "Sorry, I encountered an error processing your crypto query. Please try again.",
-                "agent": "crypto_agent"
-            }
-            state["messages"].append(error_message)
-            return state
+        searchAgent = SearchAgent(llm)
+        self.search_agent = searchAgent.agent
+        agents.append(self.search_agent)
+        available_agents_text += (
+            "- search_agent: Uses web search tools for current events and factual lookups.\n"
+        )
 
-    def _general_agent_node(self, state: ConversationState) -> ConversationState:
-        """General agent node for non-crypto queries"""
-        try:
-            # Get the latest user message
-            latest_message = state["messages"][-1] if state["messages"] else None
-            
-            if not latest_message:
-                return state
-            
-            # Create a simple response for general queries
-            content = latest_message["content"].lower()
-            
-            if any(word in content for word in ["hello", "hi"]):
-                response_content = "Hello! I'm your AI assistant. I can help you with cryptocurrency queries and general questions. What would you like to know?"
-            elif any(word in content for word in ["how are you"]):
-                response_content = "I'm doing well, thank you for asking! I'm here to help you with your questions."
-            elif any(word in content for word in ["weather"]):
-                response_content = "I don't have access to real-time weather data, but I can help you with cryptocurrency information and other questions!"
-            elif any(word in content for word in ["joke"]):
-                response_content = "Why did the cryptocurrency go to therapy? Because it had too many emotional ups and downs! 😄"
-            else:
-                response_content = "I'm here to help! I specialize in cryptocurrency information, but I can also assist with general questions. What would you like to know?"
-            
-            # Add agent response to messages
-            agent_message = {
-                "role": "assistant",
-                "content": response_content,
-                "agent": "general_agent"
-            }
-            state["messages"].append(agent_message)
-            
-            # Update current agent
-            state["current_agent"] = "general_agent"
-            
-            # Add to agent history
-            state["agent_history"].append({
-                "agent": "general_agent",
-                "action": "general_query_processed",
-                "timestamp": "now"
-            })
-            
-            return state
-            
-        except Exception as e:
-            logger.error(f"Error in general agent node: {e}")
-            # Add error message
-            error_message = {
-                "role": "assistant",
-                "content": "Sorry, I encountered an error. Please try again.",
-                "agent": "general_agent"
-            }
-            state["messages"].append(error_message)
-            return state
+        defaultAgent = DefaultAgent(llm)
+        self.default_agent = defaultAgent.agent
+        agents.append(self.default_agent)
 
-    def invoke(self, messages: List[ChatMessage], user_id: str = "anonymous", conversation_id: str = "default") -> dict:
-        """Invoke the supervisor with messages"""
+        # Track known agent names for response extraction
+        self.known_agent_names = {"crypto_agent", "database_agent", "swap_agent", "search_agent", "default_agent"}
+        self.specialized_agents = {"crypto_agent", "database_agent", "swap_agent", "search_agent"}
+        self.failure_markers = (
+            "cannot fulfill",
+            "can't fulfill",
+            "cannot assist",
+            "can't assist",
+            "cannot help",
+            "can't help",
+            "cannot tell",
+            "can't tell",
+            "cannot tell you",
+            "can't tell you",
+            "cannot comply",
+            "transfer you",
+            "specialized agent",
+            "no response available",
+            "failed to retrieve",
+            "api at the moment",
+            "handling your request",
+            "crypto_agent is handling",
+            "will provide",
+            "provide the price",
+            "tool error",
+            "search service is unavailable",
+            "configure tavily_api_key",
+            "no results found",
+            "unable to",
+            "cannot get",
+            "can't get",
+            "cannot find",
+            "can't find",
+            "could not find",
+            "do not have that information",
+            "don't have that information",
+            "having trouble",
+            "trouble finding",
+            "I can only"
+        )
+        self.config_failure_messages = {
+            CryptoConfig.PRICE_FAILURE_MESSAGE.lower(),
+            CryptoConfig.FLOOR_PRICE_FAILURE_MESSAGE.lower(),
+            CryptoConfig.TVL_FAILURE_MESSAGE.lower(),
+            CryptoConfig.FDV_FAILURE_MESSAGE.lower(),
+            CryptoConfig.MARKET_CAP_FAILURE_MESSAGE.lower(),
+            CryptoConfig.API_ERROR_MESSAGE.lower(),
+        }
+
+        # Prepare database guidance text to avoid backslashes in f-string expressions
+        if databaseAgent:
+            database_instruction = "When a user asks for data analysis, database queries, or information from the database, delegate to the database_agent."
+            database_examples = (
+                "Examples of database queries to delegate:\n"
+                "- \"What are the avax chains?\"\n"
+                "- \"What information is available about the AVAX in the database agent?\"\n"
+                "- \"What is the total number of activities addresses in AVAX?\"\n"
+                "- \"How many transactions are there in the AVAX network?\"\n"
+            )
+        else:
+            database_instruction = "Do not delegate to a database agent; answer best-effort without DB access or ask the user to start the database."
+            database_examples = ""
+
+        search_instruction = (
+            "When the user asks about breaking news, recent developments, or requests a web lookup, delegate to the search_agent first."
+        )
+        search_examples = (
+            "Examples of search queries to delegate:\n"
+            "- \"What happened with Bitcoin this week?\"\n"
+            "- \"Find the latest Avalanche ecosystem partnerships\"\n"
+            "- \"Who just won the most recent Formula 1 race?\"\n"
+        )
+
+        # System prompt to guide the supervisor
+        system_prompt = f"""You are a helpful supervisor that routes user queries to the appropriate specialized agents.
+
+Available agents:
+{available_agents_text}
+
+When a user asks about cryptocurrency prices, market data, NFTs, or DeFi protocols, delegate to the crypto_agent.
+{database_instruction}
+{search_instruction}
+For all other queries, respond directly as a helpful assistant.
+
+IMPORTANT: your final response should answer the user's query. Use the agents response to answer the user's query if necessary. Avoid returning control-transfer notes like 'Transferring back to supervisor' — return the substantive answer instead.
+
+Examples of crypto queries to delegate:
+- "What is the price of ETH?"
+- "What's the market cap of Bitcoin?"
+- "What's the floor price of Bored Apes?"
+- "What's the TVL of Uniswap?"
+
+Examples of swap queries to delegate:
+- I wanna make a swap
+- What are the available tokens for swapping?
+- I want to swap 100 USD for AVAX
+
+When a swap conversation is already underway (the user is still providing swap
+details or the swap_agent requested follow-up information), keep routing those
+messages to the swap_agent until it has gathered every field and signals the
+swap intent is ready.
+
+{database_examples}
+
+{search_examples}
+
+Examples of general queries to handle directly:
+- "Hello, how are you?"
+- "What's the weather like?"
+- "Tell me a joke"
+- "What is the biggest poll in Trader Joe?"
+"""
+
+        self.supervisor = create_supervisor(
+            agents,
+            model=llm,
+            prompt=system_prompt,
+            output_mode="last_message"
+        )
+
+        self.app = self.supervisor.compile()
+
+    def _is_handoff_text(self, text: str) -> bool:
+        if not text:
+            return False
+        t = text.strip().lower()
+        handoff_keywords = [
+            "transferring back",
+            "transfer back",
+            "returning control",
+            "handoff",
+            "handing back",
+            "delegating back",
+            "delegate back",
+            "passing back",
+            "routing back",
+            "route back",
+            "back to supervisor",
+            "supervisor will handle",
+            "sending back to supervisor",
+            "give control back",
+            "control back to supervisor",
+        ]
+        return any(k in t for k in handoff_keywords)
+
+    def _sanitize_handoff_phrases(self, text: str) -> str:
+        if not text:
+            return text
+        phrases = [
+            "transferring back to supervisor",
+            "transfer back to supervisor",
+            "returning control to supervisor",
+            "handing back to supervisor",
+            "delegating back to supervisor",
+            "delegate back to supervisor",
+            "passing back to supervisor",
+            "routing back to supervisor",
+            "route back to supervisor",
+            "back to supervisor",
+            "control back to supervisor",
+            "supervisor will handle",
+            "sending back to supervisor",
+        ]
+        sanitized = text
+        for p in phrases:
+            # remove phrase case-insensitively, with optional surrounding punctuation/whitespace
+            pattern = re.compile(r"\b" + re.escape(p) + r"\b[\s\.,;:!\)]*", re.IGNORECASE)
+            sanitized = pattern.sub(" ", sanitized)
+        # Normalize whitespace
+        sanitized = re.sub(r"\s+", " ", sanitized).strip()
+        return sanitized
+
+    def _get_text_content(self, message: Any) -> str | None:
+        content = getattr(message, "content", None)
+        if isinstance(content, str):
+            return content
+        if isinstance(content, list):
+            collected: List[str] = []
+            for part in content:
+                # Try dict form first
+                if isinstance(part, dict):
+                    text = part.get("text") or part.get("content")
+                    if isinstance(text, str) and text.strip():
+                        collected.append(text.strip())
+                else:
+                    # Best-effort: objects with 'text' attribute
+                    text_attr = getattr(part, "text", None)
+                    if isinstance(text_attr, str) and text_attr.strip():
+                        collected.append(text_attr.strip())
+            if collected:
+                return " ".join(collected)
+        return None
+
+    def _extract_payload(self, text: str) -> tuple[dict, str]:
+        # Try JSON payload first
         try:
-            # Prepare initial state
-            initial_state: ConversationState = {
-                "messages": messages,
-                "current_agent": None,
-                "agent_history": [],
-                "context": {},
-                "user_id": user_id,
-                "conversation_id": conversation_id
-            }
-            
-            # Run the graph
-            result = self.app.invoke(initial_state)
-            
-            # Extract the final response
-            final_messages = result.get("messages", [])
-            final_agent = result.get("current_agent", "supervisor")
-            
-            # Get the last assistant message
-            last_assistant_message = None
-            for msg in reversed(final_messages):
-                if msg["role"] == "assistant":
-                    last_assistant_message = msg
+            obj = json.loads(text)
+            if isinstance(obj, dict) and "metadata" in obj and "text" in obj:
+                return (obj.get("metadata") or {}), str(obj.get("text") or "")
+        except Exception:
+            pass
+        # Fallback to sentinel
+        m = re.search(r"\|\|META:\s*(\{.*?\})\|\|", text)
+        if m:
+            try:
+                meta = json.loads(m.group(1))
+            except Exception:
+                meta = {}
+            cleaned = (text[:m.start()] + text[m.end():]).strip()
+            cleaned = re.sub(r"\s+", " ", cleaned)
+            return meta, cleaned
+        return {}, text
+
+    def _collect_tool_metadata(self, messages_out) -> dict:
+        # Prefer last tool-ish content with metadata
+        for m in reversed(messages_out):
+            t = self._get_text_content(m) or ""
+            meta, _ = self._extract_payload(t)
+            if meta:
+                return meta
+            # Optional: artifact support if your langchain version has it
+            art = getattr(m, "artifact", None)
+            if isinstance(art, dict) and art:
+                return art
+        return {}
+
+    def _extract_response_from_graph(self, response: Any) -> Tuple[str, str, list]:
+        messages_out = response.get("messages", []) if isinstance(response, dict) else []
+        final_response = None
+        final_agent = "supervisor"
+
+        def choose_content_from_message(m) -> tuple[str | None, str | None]:
+            print("m: ", m)
+            agent_name = getattr(m, "name", None)
+            content_text = self._get_text_content(m)
+            if not content_text:
+                return None, None
+            sanitized = self._sanitize_handoff_phrases(content_text)
+            if sanitized and sanitized.strip() and not self._is_handoff_text(sanitized):
+                # Prefer sanitized content
+                return sanitized, agent_name
+            return None, None
+
+        # 1) Try to find the last message from a known specialized agent that is not a handoff/route-back note
+        for m in reversed(messages_out):
+            agent_name = getattr(m, "name", None)
+            if agent_name in self.known_agent_names:
+                content, agent = choose_content_from_message(m)
+                if content:
+                    final_response = content
+                    final_agent = agent or agent_name
+                    print(f'agent: {agent_name} content: {content}')
                     break
-            
-            response_content = last_assistant_message["content"] if last_assistant_message else "No response generated"
-            
-            return {
-                "messages": final_messages,
-                "agent": final_agent,
-                "response": response_content,
-                "context": result.get("context", {}),
-                "agent_history": result.get("agent_history", [])
-            }
-            
+
+        # 2) Fallback: any last message with content that is not a handoff note
+        if final_response is None:
+            for m in reversed(messages_out):
+                content, agent = choose_content_from_message(m)
+                if content:
+                    final_response = content
+                    if agent:
+                        final_agent = agent
+                    break
+
+        # 3) Last resort: use dict-level fields if present
+        if final_response is None:
+            if isinstance(response, dict):
+                final_response = response.get("response") or "No response available"
+                final_agent = response.get("agent", final_agent)
+            else:
+                final_response = "No response available"
+
+        cleaned_response = final_response or "Sorry, no meaningful response was returned."
+        final_agent = final_agent or "supervisor"
+        return final_agent, cleaned_response, messages_out
+
+    def _needs_supervisor_fallback(self, agent_name: str, response_text: str) -> bool:
+        if not response_text:
+            return agent_name in self.specialized_agents
+        lowered = response_text.strip().lower()
+        if lowered in self.config_failure_messages:
+            return True
+        if any(marker in lowered for marker in self.failure_markers):
+            return True
+        if agent_name in self.specialized_agents and not lowered:
+            return True
+        return False
+
+    def _run_default_agent(self, langchain_messages: List[Any]) -> Tuple[str | None, str | None, list]:
+        if not getattr(self, "default_agent", None):
+            return None, None, []
+        try:
+            fallback_response = self.default_agent.invoke({"messages": langchain_messages})
+            print("DEBUG: default agent fallback response", fallback_response)
+        except Exception as exc:
+            print(f"Error invoking default agent fallback: {exc}")
+            return None, None, []
+        fallback_agent, fallback_text, fallback_messages = self._extract_response_from_graph(fallback_response)
+        if not fallback_agent:
+            fallback_agent = "default_agent"
+        return fallback_agent, fallback_text, fallback_messages
+
+    def _run_search_agent(self, langchain_messages: List[Any]) -> Tuple[str | None, str | None, list]:
+        if not getattr(self, "search_agent", None):
+            return None, None, []
+        try:
+            fallback_response = self.search_agent.invoke({"messages": langchain_messages})
+            print("DEBUG: search agent fallback response", fallback_response)
+        except Exception as exc:
+            print(f"Error invoking search agent fallback: {exc}")
+            return None, None, []
+        fallback_agent, fallback_text, fallback_messages = self._extract_response_from_graph(fallback_response)
+        if not fallback_agent:
+            fallback_agent = "search_agent"
+        return fallback_agent, fallback_text, fallback_messages
+
+    def _build_metadata(self, agent_name: str, messages_out) -> dict:
+        if agent_name == "swap_agent":
+            swap_meta = metadata.get_swap_agent()
+            return swap_meta.copy() if swap_meta else {}
+        if agent_name == "crypto_agent":
+            tool_meta = self._collect_tool_metadata(messages_out)
+            if tool_meta:
+                metadata.set_crypto_data_agent(tool_meta)
+            return metadata.get_crypto_data_agent() or {}
+        return {}
+
+    def invoke(self, messages: List[ChatMessage]) -> dict:
+        from langchain_core.messages import HumanMessage, SystemMessage, AIMessage
+
+        langchain_messages = []
+        for msg in messages:
+            if msg.get("role") == "user":
+                langchain_messages.append(HumanMessage(content=msg.get("content", "")))
+            elif msg.get("role") == "system":
+                langchain_messages.append(SystemMessage(content=msg.get("content", "")))
+            elif msg.get("role") == "assistant":
+                langchain_messages.append(AIMessage(content=msg.get("content", "")))
+
+        try:
+            response = self.app.invoke({"messages": langchain_messages})
+            print("DEBUG: response", response)
         except Exception as e:
-            logger.error(f"Error in supervisor invoke: {e}", exc_info=True)
+            print(f"Error in Supervisor: {e}")
             return {
-                "messages": messages,
+                "messages": [],
                 "agent": "supervisor",
-                "response": "Sorry, I encountered an error processing your request. Please try again.",
-                "context": {},
-                "agent_history": []
+                "response": "Sorry, an error occurred while processing your request."
             }
+
+        final_agent, cleaned_response, messages_out = self._extract_response_from_graph(response)
+
+        if self._needs_supervisor_fallback(final_agent, cleaned_response):
+            print("INFO: Fallback triggered for agent", final_agent)
+            fallback_agent = None
+            fallback_response = None
+            fallback_messages: list = []
+
+            if final_agent != "search_agent":
+                search_agent, search_response, search_messages = self._run_search_agent(langchain_messages)
+                if search_response and not self._needs_supervisor_fallback(search_agent or "search_agent", search_response):
+                    fallback_agent = search_agent or "search_agent"
+                    fallback_response = search_response
+                    fallback_messages = search_messages
+                else:
+                    fallback_agent = search_agent
+                    fallback_response = search_response
+                    fallback_messages = search_messages
+
+            if not fallback_response or self._needs_supervisor_fallback(fallback_agent or "", fallback_response):
+                default_agent, default_response, default_messages = self._run_default_agent(langchain_messages)
+                if default_response:
+                    fallback_agent = default_agent or "default_agent"
+                    fallback_response = default_response
+                    fallback_messages = default_messages
+
+            if fallback_response:
+                final_agent = fallback_agent or "default_agent"
+                cleaned_response = fallback_response
+                messages_out = fallback_messages
+
+        meta = self._build_metadata(final_agent, messages_out)
+        print("meta: ", meta)
+        print("cleaned_response: ", cleaned_response)
+        print("final_agent: ", final_agent)
+
+        return {
+            "messages": messages_out,
+            "agent": final_agent,
+            "response": cleaned_response or "Sorry, no meaningful response was returned.",
+            "metadata": meta,
+        }

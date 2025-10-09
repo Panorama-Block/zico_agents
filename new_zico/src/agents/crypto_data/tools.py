@@ -1,9 +1,12 @@
 import logging
 import requests
+import json
+from pydantic import BaseModel, Field
 from sklearn.feature_extraction.text import TfidfVectorizer
 from sklearn.metrics.pairwise import cosine_similarity
 from src.agents.crypto_data.config import Config
 from langchain_core.tools import Tool
+from src.agents.metadata import metadata
 
 # -----------------------------------------------------------------------------
 # Module: crypto_data tools
@@ -228,11 +231,16 @@ def get_tvl_value(protocol_id: str) -> float:
     Returns:
         TVL value (could be a dict or number depending on API).
     """
-    url = f"{Config.DEFILLAMA_BASE_URL}/tvl/{protocol_id}"
+    url = f"{Config.DEFILLAMA_BASE_URL}/chains"
     try:
+        print(f"URL: {url}")
         response = requests.get(url)
+        print(f"Response: {response.json()}")
         response.raise_for_status()
-        return response.json()
+        chains = response.json()
+        chain = next((c for c in chains if c["name"].lower() == protocol_id.lower()), None)
+        print(f"Chain: {chain}")
+        return chain["tvl"]
     except requests.exceptions.RequestException as e:
         logging.error(f"Failed to retrieve protocol TVL: {e}")
         raise
@@ -275,17 +283,52 @@ def get_protocol_tvl(protocol_name: str) -> dict[str, float] | None:
 # Tool wrappers: these catch errors, format responses, and produce strings
 # -----------------------------------------------------------------------------
 
-def get_coin_price_tool(coin_name: str) -> str:
+def _append_coin_metadata_suffix(text: str, coin_name: str) -> str:
     """
+    Append a structured metadata sentinel to a human-friendly text response.
+    Includes CoinGecko coinId and uppercased symbol when available.
+    """
+    try:
+        coin_id = get_coingecko_id(coin_name, type="coin")
+        if not coin_id:
+            return text
+        tv_symbol = get_tradingview_symbol(coin_id)
+        symbol = None
+        if tv_symbol and tv_symbol.startswith("CRYPTO:") and tv_symbol.endswith("USD"):
+            symbol = tv_symbol[len("CRYPTO:"):-3]
+        meta = {"coinId": coin_id}
+        if symbol:
+            meta["symbol"] = symbol
+        response = f"{text} ||META: {json.dumps(meta)}||"
+        return response
+    except Exception:
+        # Never break user-visible responses due to metadata failures
+        return text
+
+
+def get_coin_price_tool(coin_name: str) -> dict:
+    """ 
     LangChain Tool: Return a user-friendly string with the coin's USD price.
     """
     try:
         price = get_price(coin_name)
         if price is None:
             return Config.PRICE_FAILURE_MESSAGE
-        return Config.PRICE_SUCCESS_MESSAGE.format(coin_name=coin_name, price=price)
+        text = Config.PRICE_SUCCESS_MESSAGE.format(coin_name=coin_name, price=price)
+        # compute metadata out-of-band
+        meta = {}
+        try:
+            coin_id = get_coingecko_id(coin_name, type="coin")
+            if coin_id:
+                tv_symbol = get_tradingview_symbol(coin_id)
+                meta["coinId"] = tv_symbol # return the symbol as the coinId
+                metadata.set_crypto_data_agent(meta)
+        except Exception:
+            pass
+
+        return {"text": text, "metadata": meta}
     except requests.exceptions.RequestException:
-        return Config.API_ERROR_MESSAGE
+        return {"text": Config.API_ERROR_MESSAGE, "metadata": {}}
 
 
 def get_nft_floor_price_tool(nft_name: str) -> str:
@@ -323,7 +366,8 @@ def get_fully_diluted_valuation_tool(coin_name: str) -> str:
         fdv = get_fdv(coin_name)
         if fdv is None:
             return Config.FDV_FAILURE_MESSAGE
-        return Config.FDV_SUCCESS_MESSAGE.format(coin_name=coin_name, fdv=fdv)
+        text = Config.FDV_SUCCESS_MESSAGE.format(coin_name=coin_name, fdv=fdv)
+        return _append_coin_metadata_suffix(text, coin_name)
     except requests.exceptions.RequestException:
         return Config.API_ERROR_MESSAGE
 
@@ -336,9 +380,22 @@ def get_coin_market_cap_tool(coin_name: str) -> str:
         market_cap = get_market_cap(coin_name)
         if market_cap is None:
             return Config.MARKET_CAP_FAILURE_MESSAGE
-        return Config.MARKET_CAP_SUCCESS_MESSAGE.format(coin_name=coin_name, market_cap=market_cap)
+        text = Config.MARKET_CAP_SUCCESS_MESSAGE.format(coin_name=coin_name, market_cap=market_cap)
+        return _append_coin_metadata_suffix(text, coin_name)
     except requests.exceptions.RequestException:
         return Config.API_ERROR_MESSAGE
+
+
+class _CoinNameArgs(BaseModel):
+    coin_name: str = Field(..., description="Name of the cryptocurrency to look up.")
+
+
+class _NFTNameArgs(BaseModel):
+    nft_name: str = Field(..., description="Name or slug of the NFT collection.")
+
+
+class _ProtocolNameArgs(BaseModel):
+    protocol_name: str = Field(..., description="Name of the DeFi protocol.")
 
 
 def get_tools() -> list[Tool]:
@@ -352,6 +409,7 @@ def get_tools() -> list[Tool]:
         Tool(
             name="get_coin_price",
             func=get_coin_price_tool,
+            args_schema=_CoinNameArgs,
             description=(
                 "Use this to get the current USD price of a cryptocurrency. "
                 "Input should be the coin name (e.g. 'bitcoin')."
@@ -360,6 +418,7 @@ def get_tools() -> list[Tool]:
         Tool(
             name="get_nft_floor_price",
             func=get_nft_floor_price_tool,
+            args_schema=_NFTNameArgs,
             description=(
                 "Fetch the floor price of an NFT collection in USD. "
                 "Input should be the NFT name or slug."
@@ -368,6 +427,7 @@ def get_tools() -> list[Tool]:
         Tool(
             name="get_protocol_tvl",
             func=get_protocol_total_value_locked_tool,
+            args_schema=_ProtocolNameArgs,
             description=(
                 "Returns the Total Value Locked (TVL) of a DeFi protocol. "
                 "Input is the protocol name."
@@ -376,6 +436,7 @@ def get_tools() -> list[Tool]:
         Tool(
             name="get_fully_diluted_valuation",
             func=get_fully_diluted_valuation_tool,
+            args_schema=_CoinNameArgs,
             description=(
                 "Get a coin's fully diluted valuation in USD. "
                 "Input the coin's name."
@@ -384,6 +445,7 @@ def get_tools() -> list[Tool]:
         Tool(
             name="get_market_cap",
             func=get_coin_market_cap_tool,
+            args_schema=_CoinNameArgs,
             description=(
                 "Retrieve the market capitalization of a coin in USD. "
                 "Input is the coin's name."

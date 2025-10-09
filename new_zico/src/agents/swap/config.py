@@ -128,11 +128,10 @@ class SwapConfig:
     }
 
     # Optional allow list of directional routes (canonical network names).
-    _SUPPORTED_ROUTES: Set[Tuple[str, str]] = {
-        (src, dst)
-        for src in _NETWORK_TOKENS.keys()
-        for dst in _NETWORK_TOKENS.keys()
-    }
+    _SUPPORTED_ROUTES: Set[Tuple[str, str]] = set()
+    for _src in _NETWORK_TOKENS.keys():
+        for _dst in _NETWORK_TOKENS.keys():
+            _SUPPORTED_ROUTES.add((_src, _dst))
 
     # ---------- Public helpers ----------
     @classmethod

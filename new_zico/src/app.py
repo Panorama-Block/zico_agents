@@ -149,7 +149,11 @@ def chat(request: ChatRequest):
         )
         
         # Invoke the supervisor agent with the conversation
-        result = supervisor.invoke(conversation_messages)
+        result = supervisor.invoke(
+            conversation_messages,
+            conversation_id=request.conversation_id,
+            user_id=request.user_id,
+        )
         
         # Add the agent's response to the conversation
         if result and isinstance(result, dict):
@@ -165,7 +169,10 @@ def chat(request: ChatRequest):
             if isinstance(result, dict) and result.get("metadata"):
                 response_metadata.update(result.get("metadata") or {})
             elif agent_name == "token swap":
-                swap_meta = metadata.get_swap_agent()
+                swap_meta = metadata.get_swap_agent(
+                    user_id=request.user_id,
+                    conversation_id=request.conversation_id,
+                )
                 if swap_meta:
                     response_metadata.update(swap_meta)
                     swap_meta_snapshot = swap_meta
@@ -201,14 +208,26 @@ def chat(request: ChatRequest):
                 if swap_meta_snapshot:
                     response_meta = swap_meta_snapshot
                 else:
-                    swap_meta = metadata.get_swap_agent()
+                    swap_meta = metadata.get_swap_agent(
+                        user_id=request.user_id,
+                        conversation_id=request.conversation_id,
+                    )
                     if swap_meta:
                         response_meta = swap_meta
-                    metadata.set_swap_agent({})
             if response_meta:
                 response_payload["metadata"] = response_meta
             if agent_name == "token swap":
-                metadata.set_swap_agent({})
+                should_clear = False
+                if response_meta:
+                    status = response_meta.get("status") if isinstance(response_meta, dict) else None
+                    event = response_meta.get("event") if isinstance(response_meta, dict) else None
+                    should_clear = status == "ready" or event == "swap_intent_ready"
+                if should_clear:
+                    metadata.set_swap_agent(
+                        {},
+                        user_id=request.user_id,
+                        conversation_id=request.conversation_id,
+                    )
             return response_payload
         
         return {"response": "No response available", "agent": "supervisor"}

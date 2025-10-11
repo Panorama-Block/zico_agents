@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from contextvars import ContextVar
 from dataclasses import asdict, dataclass
 from typing import Dict, List, Optional
 
@@ -15,11 +16,45 @@ from src.agents.swap.config import SwapConfig
 # Replace with persistent storage if the agent runs in multiple instances.
 _INTENTS: Dict[str, "SwapIntent"] = {}
 _DEFAULT_USER_ID = "__default_swap_user__"
+_DEFAULT_CONVERSATION_ID = "__default_swap_conversation__"
+
+
+_CURRENT_SESSION: ContextVar[tuple[str, str]] = ContextVar(
+    "_current_swap_session",
+    default=(_DEFAULT_USER_ID, _DEFAULT_CONVERSATION_ID),
+)
+
+
+def set_current_swap_session(user_id: Optional[str], conversation_id: Optional[str]) -> None:
+    """Store the active swap session for tool calls executed by the agent."""
+
+    resolved_user = (user_id or _DEFAULT_USER_ID) or _DEFAULT_USER_ID
+    resolved_conversation = (conversation_id or _DEFAULT_CONVERSATION_ID) or _DEFAULT_CONVERSATION_ID
+    _CURRENT_SESSION.set((resolved_user, resolved_conversation))
+
+
+def clear_current_swap_session() -> None:
+    """Reset the active swap session after the agent finishes handling a message."""
+
+    _CURRENT_SESSION.set((_DEFAULT_USER_ID, _DEFAULT_CONVERSATION_ID))
+
+
+def _resolve_session(user_id: Optional[str], conversation_id: Optional[str]) -> tuple[str, str]:
+    active_user, active_conversation = _CURRENT_SESSION.get()
+    resolved_user = user_id or active_user or _DEFAULT_USER_ID
+    resolved_conversation = conversation_id or active_conversation or _DEFAULT_CONVERSATION_ID
+    return resolved_user, resolved_conversation
+
+
+def _intent_key(user_id: Optional[str], conversation_id: Optional[str]) -> str:
+    resolved_user, resolved_conversation = _resolve_session(user_id, conversation_id)
+    return f"{resolved_user}:{resolved_conversation}"
 
 
 @dataclass
 class SwapIntent:
     user_id: str = _DEFAULT_USER_ID
+    conversation_id: str = _DEFAULT_CONVERSATION_ID
     from_network: Optional[str] = None
     from_token: Optional[str] = None
     to_network: Optional[str] = None
@@ -58,6 +93,10 @@ class UpdateSwapIntentInput(BaseModel):
         default=None,
         description="Stable ID for the end user / chat session. Optional, but required for multi-user disambiguation.",
     )
+    conversation_id: Optional[str] = Field(
+        default=None,
+        description="Conversation identifier to scope swap intents within a user.",
+    )
     from_network: Optional[str] = None
     from_token: Optional[str] = None
     to_network: Optional[str] = None
@@ -76,6 +115,32 @@ class UpdateSwapIntentInput(BaseModel):
 
 
 # ---------- Output helpers ----------
+def _store_swap_metadata(
+    intent: SwapIntent,
+    ask: Optional[str],
+    done: bool,
+    error: Optional[str],
+) -> None:
+    missing = intent.missing_fields()
+    next_field = missing[0] if missing else None
+    meta: Dict[str, object] = {
+        "event": "swap_intent_ready" if done else "swap_intent_pending",
+        "status": "ready" if done else "collecting",
+        "from_network": intent.from_network,
+        "from_token": intent.from_token,
+        "to_network": intent.to_network,
+        "to_token": intent.to_token,
+        "amount": intent.amount,
+        "user_id": intent.user_id,
+        "conversation_id": intent.conversation_id,
+        "missing_fields": missing,
+        "next_field": next_field,
+        "pending_question": ask,
+        "error": error,
+    }
+    metadata.set_swap_agent(meta, intent.user_id, intent.conversation_id)
+
+
 def _response(
     intent: SwapIntent,
     ask: Optional[str],
@@ -100,7 +165,10 @@ def _response(
             "to_network": intent.to_network,
             "to_token": intent.to_token,
             "amount": intent.amount,
+            "user_id": intent.user_id,
+            "conversation_id": intent.conversation_id,
         }
+    _store_swap_metadata(intent, ask, done, error)
     return payload
 
 
@@ -136,6 +204,7 @@ def _validate_route(from_network: str, to_network: str) -> None:
 @tool("update_swap_intent", args_schema=UpdateSwapIntentInput)
 def update_swap_intent_tool(
     user_id: Optional[str] = None,
+    conversation_id: Optional[str] = None,
     from_network: Optional[str] = None,
     from_token: Optional[str] = None,
     to_network: Optional[str] = None,
@@ -149,10 +218,18 @@ def update_swap_intent_tool(
     and keep calling it until the response event becomes 'swap_intent_ready'.
     """
 
-    intent_key = user_id or _DEFAULT_USER_ID
-    intent = _INTENTS.get(intent_key) or SwapIntent(user_id=intent_key)
+    intent_key = _intent_key(user_id, conversation_id)
+    resolved_user, resolved_conversation = _resolve_session(user_id, conversation_id)
+    intent = _INTENTS.get(intent_key) or SwapIntent(
+        user_id=resolved_user,
+        conversation_id=resolved_conversation,
+    )
+
     if user_id:
         intent.user_id = user_id
+    if conversation_id:
+        intent.conversation_id = conversation_id
+
     _INTENTS[intent_key] = intent
 
     try:
@@ -242,9 +319,13 @@ def update_swap_intent_tool(
         "to_network": intent.to_network,
         "to_token": intent.to_token,
         "amount": intent.amount,
+        "user_id": intent.user_id,
+        "conversation_id": intent.conversation_id,
     }
-    metadata.set_swap_agent(meta)
-    return _response(intent, ask=None, done=True)
+    metadata.set_swap_agent(meta, intent.user_id, intent.conversation_id)
+    response = _response(intent, ask=None, done=True)
+    _INTENTS.pop(intent_key, None)
+    return response
 
 
 class ListTokensInput(BaseModel):

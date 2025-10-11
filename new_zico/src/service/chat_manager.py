@@ -101,6 +101,8 @@ class ChatManager:
         conversation_id = self._get_conversation_id(conversation_id)
         conversation = self._get_or_create_conversation(conversation_id, user_id)
         chat_message = ChatMessage(**message)
+        chat_message.conversation_id = conversation_id
+        chat_message.user_id = user_id
         if "timestamp" not in message:
             chat_message.timestamp = datetime.utcnow()
         conversation.messages.append(chat_message)

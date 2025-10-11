@@ -1,7 +1,7 @@
 from langchain_google_genai import ChatGoogleGenerativeAI, GoogleGenerativeAIEmbeddings
 from langgraph_supervisor import create_supervisor
 from src.agents.config import Config
-from typing import TypedDict, Literal, List, Any, Tuple
+from typing import TypedDict, Literal, List, Any, Tuple, Optional
 import re
 import json
 from src.agents.metadata import metadata
@@ -12,6 +12,7 @@ from src.agents.crypto_data.agent import CryptoDataAgent
 from src.agents.database.agent import DatabaseAgent
 from src.agents.default.agent import DefaultAgent
 from src.agents.swap.agent import SwapAgent
+from src.agents.swap.tools import set_current_swap_session, clear_current_swap_session
 from src.agents.search.agent import SearchAgent
 from src.agents.database.client import is_database_available
 
@@ -55,7 +56,8 @@ class Supervisor:
             databaseAgent = None
 
         swapAgent = SwapAgent(llm)
-        agents.append(swapAgent.agent)
+        self.swap_agent = swapAgent.agent
+        agents.append(self.swap_agent)
         available_agents_text += (
             "- swap_agent: Handles swap operations on the Avalanche network and any other swap question related.\n"
         )
@@ -119,6 +121,9 @@ class Supervisor:
             CryptoConfig.MARKET_CAP_FAILURE_MESSAGE.lower(),
             CryptoConfig.API_ERROR_MESSAGE.lower(),
         }
+
+        self._active_user_id: str | None = None
+        self._active_conversation_id: str | None = None
 
         # Prepare database guidance text to avoid backslashes in f-string expressions
         if databaseAgent:
@@ -297,6 +302,25 @@ Examples of general queries to handle directly:
                 return art
         return {}
 
+    def _invoke_swap_agent(self, langchain_messages):
+        try:
+            set_current_swap_session(
+                user_id=self._active_user_id,
+                conversation_id=self._active_conversation_id,
+            )
+            response = self.swap_agent.invoke({"messages": langchain_messages})
+        except Exception as exc:
+            print(f"Error invoking swap agent directly: {exc}")
+            return None
+        finally:
+            clear_current_swap_session()
+
+        if not response:
+            return None
+
+        agent, text, messages_out = self._extract_response_from_graph(response)
+        return agent, text, messages_out
+
     def _extract_response_from_graph(self, response: Any) -> Tuple[str, str, list]:
         messages_out = response.get("messages", []) if isinstance(response, dict) else []
         final_response = None
@@ -389,7 +413,10 @@ Examples of general queries to handle directly:
 
     def _build_metadata(self, agent_name: str, messages_out) -> dict:
         if agent_name == "swap_agent":
-            swap_meta = metadata.get_swap_agent()
+            swap_meta = metadata.get_swap_agent(
+                user_id=self._active_user_id,
+                conversation_id=self._active_conversation_id,
+            )
             return swap_meta.copy() if swap_meta else {}
         if agent_name == "crypto_agent":
             tool_meta = self._collect_tool_metadata(messages_out)
@@ -398,8 +425,17 @@ Examples of general queries to handle directly:
             return metadata.get_crypto_data_agent() or {}
         return {}
 
-    def invoke(self, messages: List[ChatMessage]) -> dict:
+    def invoke(
+        self,
+        messages: List[ChatMessage],
+        conversation_id: Optional[str] = None,
+        user_id: Optional[str] = None,
+    ) -> dict:
         from langchain_core.messages import HumanMessage, SystemMessage, AIMessage
+
+        self._active_user_id = user_id
+        self._active_conversation_id = conversation_id
+        swap_state = metadata.get_swap_agent(user_id=user_id, conversation_id=conversation_id)
 
         langchain_messages = []
         for msg in messages:
@@ -410,7 +446,35 @@ Examples of general queries to handle directly:
             elif msg.get("role") == "assistant":
                 langchain_messages.append(AIMessage(content=msg.get("content", "")))
 
+        if swap_state and swap_state.get("status") == "collecting":
+            swap_result = self._invoke_swap_agent(langchain_messages)
+            if swap_result:
+                final_agent, cleaned_response, messages_out = swap_result
+                meta = self._build_metadata(final_agent, messages_out)
+                self._active_user_id = None
+                self._active_conversation_id = None
+                return {
+                    "messages": messages_out,
+                    "agent": final_agent,
+                    "response": cleaned_response or "Sorry, no meaningful response was returned.",
+                    "metadata": meta,
+                }
+            # If direct swap invocation failed, fall through to supervisor graph with hints
+            next_field = swap_state.get("next_field")
+            pending_question = swap_state.get("pending_question")
+            guidance_parts = [
+                "There is an in-progress token swap intent for this conversation.",
+                "Keep routing messages to the swap_agent until the intent is complete unless the user explicitly cancels or changes topic.",
+            ]
+            if next_field:
+                guidance_parts.append(f"The next field to collect is: {next_field}.")
+            if pending_question:
+                guidance_parts.append(f"Continue the swap flow by asking: {pending_question}")
+            guidance_text = " ".join(guidance_parts)
+            langchain_messages.insert(0, SystemMessage(content=guidance_text))
+
         try:
+            set_current_swap_session(user_id=user_id, conversation_id=conversation_id)
             response = self.app.invoke({"messages": langchain_messages})
             print("DEBUG: response", response)
         except Exception as e:
@@ -420,6 +484,8 @@ Examples of general queries to handle directly:
                 "agent": "supervisor",
                 "response": "Sorry, an error occurred while processing your request."
             }
+        finally:
+            clear_current_swap_session()
 
         final_agent, cleaned_response, messages_out = self._extract_response_from_graph(response)
 
@@ -456,6 +522,9 @@ Examples of general queries to handle directly:
         print("meta: ", meta)
         print("cleaned_response: ", cleaned_response)
         print("final_agent: ", final_agent)
+
+        self._active_user_id = None
+        self._active_conversation_id = None
 
         return {
             "messages": messages_out,

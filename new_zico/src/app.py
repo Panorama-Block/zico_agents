@@ -114,6 +114,24 @@ def _map_agent_type(agent_name: str) -> str:
     }
     return mapping.get(agent_name, "supervisor")
 
+
+def _resolve_identity(request: ChatRequest) -> tuple[str, str]:
+    """Ensure each request has a stable user and conversation identifier."""
+
+    user_id = (request.user_id or "").strip()
+    if not user_id or user_id.lower() == "anonymous":
+        wallet = (request.wallet_address or "").strip()
+        if wallet and wallet.lower() != "default":
+            user_id = f"wallet::{wallet.lower()}"
+        else:
+            raise HTTPException(
+                status_code=400,
+                detail="A stable 'user_id' or wallet_address is required for swap operations.",
+            )
+
+    conversation_id = (request.conversation_id or "").strip() or "default"
+    return user_id, conversation_id
+
 @app.get("/health")
 def health_check():
     return {"status": "ok"}
@@ -135,21 +153,27 @@ def get_conversations(request: Request):
 def chat(request: ChatRequest):
     print("request: ", request)
     try:
+        user_id, conversation_id = _resolve_identity(request)
+
         # Add the user message to the conversation
         chat_manager_instance.add_message(
             message=request.message.dict(),
-            conversation_id=request.conversation_id,
-            user_id=request.user_id
+            conversation_id=conversation_id,
+            user_id=user_id
         )
         
         # Get all messages from the conversation to pass to the agent
         conversation_messages = chat_manager_instance.get_messages(
-            conversation_id=request.conversation_id,
-            user_id=request.user_id
+            conversation_id=conversation_id,
+            user_id=user_id
         )
         
         # Invoke the supervisor agent with the conversation
-        result = supervisor.invoke(conversation_messages)
+        result = supervisor.invoke(
+            conversation_messages,
+            conversation_id=conversation_id,
+            user_id=user_id,
+        )
         
         # Add the agent's response to the conversation
         if result and isinstance(result, dict):
@@ -165,7 +189,10 @@ def chat(request: ChatRequest):
             if isinstance(result, dict) and result.get("metadata"):
                 response_metadata.update(result.get("metadata") or {})
             elif agent_name == "token swap":
-                swap_meta = metadata.get_swap_agent()
+                swap_meta = metadata.get_swap_agent(
+                    user_id=user_id,
+                    conversation_id=conversation_id,
+                )
                 if swap_meta:
                     response_metadata.update(swap_meta)
                     swap_meta_snapshot = swap_meta
@@ -178,8 +205,8 @@ def chat(request: ChatRequest):
                 agent_name=agent_name,
                 agent_type=_map_agent_type(agent_name),
                 metadata=result.get("metadata", {}),
-                conversation_id=request.conversation_id,
-                user_id=request.user_id,
+                conversation_id=conversation_id,
+                user_id=user_id,
                 requires_action=True if agent_name == "token swap" else False,
                 action_type="swap" if agent_name == "token swap" else None
             )
@@ -187,8 +214,8 @@ def chat(request: ChatRequest):
             # Add the response message to the conversation
             chat_manager_instance.add_message(
                 message=response_message.dict(),
-                conversation_id=request.conversation_id,
-                user_id=request.user_id
+                conversation_id=conversation_id,
+                user_id=user_id
             )
 
             # Return only the clean response
@@ -201,14 +228,26 @@ def chat(request: ChatRequest):
                 if swap_meta_snapshot:
                     response_meta = swap_meta_snapshot
                 else:
-                    swap_meta = metadata.get_swap_agent()
+                    swap_meta = metadata.get_swap_agent(
+                        user_id=user_id,
+                        conversation_id=conversation_id,
+                    )
                     if swap_meta:
                         response_meta = swap_meta
-                    metadata.set_swap_agent({})
             if response_meta:
                 response_payload["metadata"] = response_meta
             if agent_name == "token swap":
-                metadata.set_swap_agent({})
+                should_clear = False
+                if response_meta:
+                    status = response_meta.get("status") if isinstance(response_meta, dict) else None
+                    event = response_meta.get("event") if isinstance(response_meta, dict) else None
+                    should_clear = status == "ready" or event == "swap_intent_ready"
+                if should_clear:
+                    metadata.set_swap_agent(
+                        {},
+                        user_id=user_id,
+                        conversation_id=conversation_id,
+                    )
             return response_payload
         
         return {"response": "No response available", "agent": "supervisor"}

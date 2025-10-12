@@ -1,0 +1,63 @@
+{
+  "intents": {
+    "<user_id>::<conversation_id>": {
+      "intent": {
+        "user_id": "<user_id>",
+        "conversation_id": "<conversation_id>",
+        "from_network": null,
+        "from_token": null,
+        "to_network": null,
+        "to_token": null,
+        "amount": null,
+        "updated_at": 1760231993.3835566
+      },
+      "updated_at": 1760231993.3835785
+    }
+  },
+  "metadata": {
+    "<user_id>::<conversation_id>": {
+      "event": "swap_intent_pending",
+      "status": "collecting",
+      "from_network": null,
+      "from_token": null,
+      "to_network": null,
+      "to_token": null,
+      "amount": null,
+      "user_id": "<user_id>",
+      "conversation_id": "<conversation_id>",
+      "missing_fields": [
+        "from_network",
+        "from_token",
+        "to_network",
+        "to_token",
+        "amount"
+      ],
+      "next_field": "from_network",
+      "pending_question": "From which network?",
+      "choices": [
+        "arbitrum",
+        "avalanche",
+        "base",
+        "binance-smart-chain",
+        "ethereum",
+        "optimism",
+        "polygon"
+      ],
+      "error": null,
+      "updated_at": 1760231993.3868954
+    }
+  },
+  "history": {
+    "user123::crypto-conv-1": [
+      {
+        "status": "ready",
+        "from_network": "ethereum",
+        "from_token": "LINK",
+        "to_network": "avalanche",
+        "to_token": "AVAX",
+        "amount": "1",
+        "timestamp": 1760232078.673952
+      }
+    ]
+  }
+}

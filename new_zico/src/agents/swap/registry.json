@@ -1,0 +1,94 @@
+{
+  "routes": "all",
+  "networks": [
+    {
+      "name": "avalanche",
+      "aliases": ["avalanche", "avax"],
+      "tokens": [
+        {"symbol": "AVAX", "aliases": ["avax"], "decimals": 18, "min_amount": "0.0001", "max_amount": "100000"},
+        {"symbol": "WAVAX", "aliases": ["wavax"], "decimals": 18, "min_amount": "0.0001", "max_amount": "100000"},
+        {"symbol": "UNI", "aliases": ["uni"], "decimals": 18, "min_amount": "0.01", "max_amount": "100000"},
+        {"symbol": "USDC", "aliases": ["usdc"], "decimals": 6, "min_amount": "1", "max_amount": "1000000"},
+        {"symbol": "USDT", "aliases": ["usdt"], "decimals": 6, "min_amount": "1", "max_amount": "1000000"},
+        {"symbol": "AAVE", "aliases": ["aave"], "decimals": 18, "min_amount": "0.01", "max_amount": "250000"},
+        {"symbol": "BTC.B", "aliases": ["btc.b", "btcb"], "decimals": 8, "min_amount": "0.0001", "max_amount": "100"},
+        {"symbol": "JOE", "aliases": ["joe"], "decimals": 18, "min_amount": "1", "max_amount": "1000000"},
+        {"symbol": "MIM", "aliases": ["mim"], "decimals": 18, "min_amount": "1", "max_amount": "1000000"}
+      ]
+    },
+    {
+      "name": "ethereum",
+      "aliases": ["ethereum", "eth", "ethereum mainnet"],
+      "tokens": [
+        {"symbol": "ETH", "aliases": ["eth"], "decimals": 18, "min_amount": "0.0001", "max_amount": "10000"},
+        {"symbol": "WETH", "aliases": ["weth"], "decimals": 18, "min_amount": "0.0001", "max_amount": "10000"},
+        {"symbol": "USDC", "aliases": ["usdc"], "decimals": 6, "min_amount": "1", "max_amount": "1000000"},
+        {"symbol": "USDT", "aliases": ["usdt"], "decimals": 6, "min_amount": "1", "max_amount": "1000000"},
+        {"symbol": "WBTC", "aliases": ["wbtc"], "decimals": 8, "min_amount": "0.0001", "max_amount": "100"},
+        {"symbol": "AAVE", "aliases": ["aave"], "decimals": 18, "min_amount": "0.01", "max_amount": "250000"},
+        {"symbol": "UNI", "aliases": ["uni"], "decimals": 18, "min_amount": "0.01", "max_amount": "250000"},
+        {"symbol": "LINK", "aliases": ["link", "chainlink"], "decimals": 18, "min_amount": "0.01", "max_amount": "500000"},
+        {"symbol": "LDO", "aliases": ["ldo"], "decimals": 18, "min_amount": "0.01", "max_amount": "500000"},
+        {"symbol": "USDE", "aliases": ["usde"], "decimals": 18, "min_amount": "1", "max_amount": "1000000"},
+        {"symbol": "DAI", "aliases": ["dai"], "decimals": 18, "min_amount": "1", "max_amount": "1000000"}
+      ]
+    },
+    {
+      "name": "binance-smart-chain",
+      "aliases": ["binance smart chain", "binance-smart-chain", "bsc", "bnb"],
+      "tokens": [
+        {"symbol": "USDT", "aliases": ["usdt"], "decimals": 18, "min_amount": "1", "max_amount": "1000000"},
+        {"symbol": "USDC", "aliases": ["usdc"], "decimals": 18, "min_amount": "1", "max_amount": "1000000"},
+        {"symbol": "CAKE", "aliases": ["cake"], "decimals": 18, "min_amount": "0.1", "max_amount": "1000000"},
+        {"symbol": "ADA", "aliases": ["ada"], "decimals": 18, "min_amount": "1", "max_amount": "5000000"},
+        {"symbol": "DOGE", "aliases": ["doge"], "decimals": 8, "min_amount": "10", "max_amount": "10000000"},
+        {"symbol": "XRP", "aliases": ["xrp"], "decimals": 6, "min_amount": "10", "max_amount": "10000000"},
+        {"symbol": "DOT", "aliases": ["dot"], "decimals": 10, "min_amount": "0.1", "max_amount": "100000"},
+        {"symbol": "TUSD", "aliases": ["tusd"], "decimals": 18, "min_amount": "1", "max_amount": "1000000"}
+      ]
+    },
+    {
+      "name": "polygon",
+      "aliases": ["polygon", "matic"],
+      "tokens": [
+        {"symbol": "USDT", "aliases": ["usdt"], "decimals": 6, "min_amount": "1", "max_amount": "1000000"},
+        {"symbol": "USDC", "aliases": ["usdc"], "decimals": 6, "min_amount": "1", "max_amount": "1000000"},
+        {"symbol": "WETH", "aliases": ["weth"], "decimals": 18, "min_amount": "0.0001", "max_amount": "10000"},
+        {"symbol": "DAI", "aliases": ["dai"], "decimals": 18, "min_amount": "1", "max_amount": "1000000"},
+        {"symbol": "QUICK", "aliases": ["quick"], "decimals": 18, "min_amount": "0.1", "max_amount": "1000000"},
+        {"symbol": "AAVE", "aliases": ["aave"], "decimals": 18, "min_amount": "0.01", "max_amount": "250000"},
+        {"symbol": "SAND", "aliases": ["sand"], "decimals": 18, "min_amount": "1", "max_amount": "1000000"}
+      ]
+    },
+    {
+      "name": "arbitrum",
+      "aliases": ["arbitrum", "arbitrum one"],
+      "tokens": [
+        {"symbol": "ARB", "aliases": ["arb"], "decimals": 18, "min_amount": "0.1", "max_amount": "1000000"},
+        {"symbol": "USDT", "aliases": ["usdt"], "decimals": 6, "min_amount": "1", "max_amount": "1000000"},
+        {"symbol": "USDC", "aliases": ["usdc"], "decimals": 6, "min_amount": "1", "max_amount": "1000000"},
+        {"symbol": "ETH", "aliases": ["eth"], "decimals": 18, "min_amount": "0.0001", "max_amount": "10000"},
+        {"symbol": "GMX", "aliases": ["gmx"], "decimals": 18, "min_amount": "0.1", "max_amount": "1000000"}
+      ]
+    },
+    {
+      "name": "base",
+      "aliases": ["base"],
+      "tokens": [
+        {"symbol": "USDC", "aliases": ["usdc"], "decimals": 6, "min_amount": "1", "max_amount": "1000000"},
+        {"symbol": "ETH", "aliases": ["eth"], "decimals": 18, "min_amount": "0.0001", "max_amount": "10000"},
+        {"symbol": "CBBTC", "aliases": ["cbbtc", "cb-btc"], "decimals": 8, "min_amount": "0.0001", "max_amount": "100"},
+        {"symbol": "AERO", "aliases": ["aero"], "decimals": 18, "min_amount": "0.1", "max_amount": "100000"}
+      ]
+    },
+    {
+      "name": "optimism",
+      "aliases": ["optimism", "op"],
+      "tokens": [
+        {"symbol": "USDC", "aliases": ["usdc"], "decimals": 6, "min_amount": "1", "max_amount": "1000000"},
+        {"symbol": "USDT", "aliases": ["usdt"], "decimals": 6, "min_amount": "1", "max_amount": "1000000"},
+        {"symbol": "OP", "aliases": ["op"], "decimals": 18, "min_amount": "0.1", "max_amount": "1000000"}
+      ]
+    }
+  ]
+}

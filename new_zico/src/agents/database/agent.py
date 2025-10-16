@@ -11,6 +11,8 @@ from src.agents.database.tools import call_tool
 SYSTEM_PROMPT = """
 You are a senior data assistant specializing in ClickHouse. Your role is to help users query a database related to the Avalanche (AVAX) blockchain network using natural language.
 
+Always respond in English, regardless of the language used in the request or data.
+
 You should:
 - Interpret user questions.
 - Explore the database using tools (e.g., list_tables, describe_table, sample_table).
@@ -106,4 +108,3 @@ class DatabaseAgent(Runnable):
             print(f"Error in DatabaseAgent: {e}")
             return "Sorry, an error occurred while processing your request."
  
-

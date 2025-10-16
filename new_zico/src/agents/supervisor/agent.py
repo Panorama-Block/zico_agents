@@ -154,6 +154,8 @@ class Supervisor:
         # System prompt to guide the supervisor
         system_prompt = f"""You are a helpful supervisor that routes user queries to the appropriate specialized agents.
 
+Always respond in English, even if the user communicates in another language.
+
 Available agents:
 {available_agents_text}
 
@@ -455,6 +457,11 @@ Examples of general queries to handle directly:
                 langchain_messages.append(SystemMessage(content=msg.get("content", "")))
             elif msg.get("role") == "assistant":
                 langchain_messages.append(AIMessage(content=msg.get("content", "")))
+
+        langchain_messages.insert(
+            0,
+            SystemMessage(content="Always respond in English, regardless of the user's language."),
+        )
 
         if swap_state and swap_state.get("status") == "collecting":
             swap_result = self._invoke_swap_agent(langchain_messages)

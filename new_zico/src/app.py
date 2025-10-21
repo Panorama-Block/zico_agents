@@ -155,6 +155,20 @@ def chat(request: ChatRequest):
     try:
         user_id, conversation_id = _resolve_identity(request)
 
+        wallet = request.wallet_address.strip() if request.wallet_address else None
+        if wallet and wallet.lower() == "default":
+            wallet = None
+        display_name = None
+        if isinstance(request.message.metadata, dict):
+            display_name = request.message.metadata.get("display_name")
+
+        chat_manager_instance.ensure_session(
+            user_id,
+            conversation_id,
+            wallet_address=wallet,
+            display_name=display_name,
+        )
+
         # Add the user message to the conversation
         chat_manager_instance.add_message(
             message=request.message.dict(),

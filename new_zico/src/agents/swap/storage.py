@@ -1,45 +1,66 @@
-"""Persistent storage for swap intents and metadata."""
+"""Gateway-backed storage for swap intents with local fallback."""
 from __future__ import annotations
 
 import copy
-import json
-import os
 import time
 from datetime import datetime, timezone
-from pathlib import Path
 from threading import Lock
 from typing import Any, Dict, List, Optional
 
-_STATE_TEMPLATE: Dict[str, Dict[str, Any]] = {
-    "intents": {},
-    "metadata": {},
-    "history": {},
-}
+from src.integrations.panorama_gateway import (
+    PanoramaGatewayClient,
+    PanoramaGatewayError,
+    PanoramaGatewaySettings,
+    get_panorama_settings,
+)
+
+SWAP_SESSION_ENTITY = "swap-sessions"
+SWAP_HISTORY_ENTITY = "swap-histories"
+
+
+def _utc_now_iso() -> str:
+    return datetime.utcnow().replace(tzinfo=timezone.utc).isoformat()
+
+
+def _identifier(user_id: str, conversation_id: str) -> str:
+    return f"{user_id}:{conversation_id}"
+
+
+def _as_float(value: Any) -> Optional[float]:
+    if value is None:
+        return None
+    try:
+        return float(value)
+    except (TypeError, ValueError):
+        return None
 
 
 class SwapStateRepository:
-    """File-backed storage for swap agent state with TTL and history support."""
+    """Stores swap agent state via Panorama's gateway or an in-memory fallback."""
 
     _instance: "SwapStateRepository" | None = None
     _instance_lock: Lock = Lock()
 
     def __init__(
         self,
-        path: Optional[Path] = None,
-        ttl_seconds: int = 3600,
+        *,
+        client: PanoramaGatewayClient | None = None,
+        settings: PanoramaGatewaySettings | None = None,
         history_limit: int = 10,
     ) -> None:
-        env_path = os.getenv("SWAP_STATE_PATH")
-        default_path = Path(__file__).with_name("swap_state.json")
-        self._path = Path(path or env_path or default_path)
-        self._ttl_seconds = ttl_seconds
         self._history_limit = history_limit
-        self._lock = Lock()
-        self._state: Dict[str, Dict[str, Any]] = copy.deepcopy(_STATE_TEMPLATE)
-        self._ensure_parent()
-        with self._lock:
-            self._load_locked()
+        try:
+            self._settings = settings or get_panorama_settings()
+            self._client = client or PanoramaGatewayClient(self._settings)
+            self._use_gateway = True
+        except ValueError:
+            # PANORAMA_GATEWAY_URL or JWT secrets not configured – fall back to local store.
+            self._settings = None
+            self._client = None
+            self._use_gateway = False
+            self._state = {"intents": {}, "metadata": {}, "history": {}}
 
+    # ---- Singleton helpers -----------------------------------------------
     @classmethod
     def instance(cls) -> "SwapStateRepository":
         if cls._instance is None:
@@ -53,92 +74,18 @@ class SwapStateRepository:
         with cls._instance_lock:
             cls._instance = None
 
-    def _ensure_parent(self) -> None:
-        try:
-            self._path.parent.mkdir(parents=True, exist_ok=True)
-        except OSError:
-            pass
-
-    def _load_locked(self) -> None:
-        if not self._path.exists():
-            self._state = copy.deepcopy(_STATE_TEMPLATE)
-            return
-        try:
-            data = json.loads(self._path.read_text())
-        except Exception:
-            self._state = copy.deepcopy(_STATE_TEMPLATE)
-            return
-        if not isinstance(data, dict):
-            self._state = copy.deepcopy(_STATE_TEMPLATE)
-            return
-        state = copy.deepcopy(_STATE_TEMPLATE)
-        for key in state:
-            if isinstance(data.get(key), dict):
-                state[key] = data[key]
-        self._state = state
-
-    def _persist_locked(self) -> None:
-        self._ensure_parent()
-        tmp_path = self._path.with_suffix(".tmp")
-        payload = json.dumps(self._state, ensure_ascii=False, indent=2)
-        try:
-            tmp_path.write_text(payload)
-            tmp_path.replace(self._path)
-        except Exception:
-            pass
-
-    @staticmethod
-    def _normalize_identifier(value: Optional[str], label: str) -> str:
-        candidate = (value or "").strip()
-        if not candidate:
-            raise ValueError(f"{label} is required for swap state operations.")
-        return candidate
-
-    def _key(self, user_id: Optional[str], conversation_id: Optional[str]) -> str:
-        user = self._normalize_identifier(user_id, "user_id")
-        conversation = self._normalize_identifier(conversation_id, "conversation_id")
-        return f"{user}::{conversation}"
-
-    def _purge_locked(self) -> None:
-        if self._ttl_seconds <= 0:
-            return
-        cutoff = time.time() - self._ttl_seconds
-        intents = self._state["intents"]
-        metadata = self._state["metadata"]
-        stale_keys = [
-            key for key, record in intents.items() if record.get("updated_at", 0) < cutoff
-        ]
-        for key in stale_keys:
-            intents.pop(key, None)
-            metadata.pop(key, None)
-
-    @staticmethod
-    def _format_timestamp(value: float) -> str:
-        return datetime.fromtimestamp(value, tz=timezone.utc).isoformat()
-
-    def _history_unlocked(self, key: str, limit: Optional[int] = None) -> List[Dict[str, Any]]:
-        history = self._state["history"].get(key, [])
-        sorted_history = sorted(history, key=lambda item: item.get("timestamp", 0), reverse=True)
-        effective_limit = limit or self._history_limit
-        if effective_limit:
-            sorted_history = sorted_history[:effective_limit]
-        results: List[Dict[str, Any]] = []
-        for item in sorted_history:
-            entry = copy.deepcopy(item)
-            ts = entry.get("timestamp")
-            if ts is not None:
-                entry["timestamp"] = self._format_timestamp(float(ts))
-            results.append(entry)
-        return results
-
+    # ---- Core API ---------------------------------------------------------
     def load_intent(self, user_id: str, conversation_id: str) -> Optional[Dict[str, Any]]:
-        key = self._key(user_id, conversation_id)
-        with self._lock:
-            self._purge_locked()
-            record = self._state["intents"].get(key)
+        if not self._use_gateway:
+            record = self._state["intents"].get(_identifier(user_id, conversation_id))
             if not record:
                 return None
             return copy.deepcopy(record.get("intent"))
+
+        session = self._get_session(user_id, conversation_id)
+        if not session:
+            return None
+        return session.get("intent") or None
 
     def persist_intent(
         self,
@@ -149,72 +96,111 @@ class SwapStateRepository:
         done: bool,
         summary: Optional[Dict[str, Any]] = None,
     ) -> List[Dict[str, Any]]:
-        key = self._key(user_id, conversation_id)
-        with self._lock:
-            self._purge_locked()
+        if not self._use_gateway:
+            key = _identifier(user_id, conversation_id)
             now = time.time()
             if done:
                 self._state["intents"].pop(key, None)
             else:
-                self._state["intents"][key] = {
-                    "intent": copy.deepcopy(intent),
-                    "updated_at": now,
-                }
+                self._state["intents"][key] = {"intent": copy.deepcopy(intent), "updated_at": now}
             if metadata:
                 meta_copy = copy.deepcopy(metadata)
                 meta_copy["updated_at"] = now
                 self._state["metadata"][key] = meta_copy
             if done and summary:
-                history = self._state["history"].get(key, [])
+                history = self._state["history"].setdefault(key, [])
                 summary_copy = copy.deepcopy(summary)
                 summary_copy.setdefault("timestamp", now)
                 history.append(summary_copy)
-                self._state["history"][key] = history[-self._history_limit:]
-            try:
-                self._persist_locked()
-            except Exception:
-                pass
-            return self._history_unlocked(key)
+                self._state["history"][key] = history[-self._history_limit :]
+            return self.get_history(user_id, conversation_id)
 
-    def set_metadata(self, user_id: str, conversation_id: str, metadata: Dict[str, Any]) -> None:
-        key = self._key(user_id, conversation_id)
-        with self._lock:
-            self._purge_locked()
+        if done:
+            if summary:
+                self._create_history_entry(user_id, conversation_id, summary)
+            self._delete_session(user_id, conversation_id)
+        else:
+            payload = self._session_payload(intent, metadata)
+            self._upsert_session(user_id, conversation_id, payload)
+        return self.get_history(user_id, conversation_id)
+
+    def set_metadata(
+        self,
+        user_id: str,
+        conversation_id: str,
+        metadata: Dict[str, Any],
+    ) -> None:
+        if not self._use_gateway:
+            key = _identifier(user_id, conversation_id)
             if metadata:
                 meta_copy = copy.deepcopy(metadata)
                 meta_copy["updated_at"] = time.time()
                 self._state["metadata"][key] = meta_copy
             else:
                 self._state["metadata"].pop(key, None)
-            try:
-                self._persist_locked()
-            except Exception:
-                pass
+            return
+
+        if not metadata:
+            self._delete_session(user_id, conversation_id)
+            return
+
+        session = self._get_session(user_id, conversation_id)
+        intent = session.get("intent") if session else {}
+        payload = self._session_payload(intent or {}, metadata)
+        self._upsert_session(user_id, conversation_id, payload)
 
     def clear_metadata(self, user_id: str, conversation_id: str) -> None:
         self.set_metadata(user_id, conversation_id, {})
 
     def clear_intent(self, user_id: str, conversation_id: str) -> None:
-        key = self._key(user_id, conversation_id)
-        with self._lock:
-            self._state["intents"].pop(key, None)
-            try:
-                self._persist_locked()
-            except Exception:
-                pass
+        if not self._use_gateway:
+            self._state["intents"].pop(_identifier(user_id, conversation_id), None)
+            self._state["metadata"].pop(_identifier(user_id, conversation_id), None)
+            return
+        self._delete_session(user_id, conversation_id)
 
     def get_metadata(self, user_id: str, conversation_id: str) -> Dict[str, Any]:
-        key = self._key(user_id, conversation_id)
-        with self._lock:
-            self._purge_locked()
-            meta = self._state["metadata"].get(key)
-            if not meta:
+        if not self._use_gateway:
+            record = self._state["metadata"].get(_identifier(user_id, conversation_id))
+            if not record:
                 return {}
-            entry = copy.deepcopy(meta)
+            entry = copy.deepcopy(record)
             ts = entry.pop("updated_at", None)
             if ts is not None:
-                entry["updated_at"] = self._format_timestamp(float(ts))
+                entry["updated_at"] = datetime.fromtimestamp(float(ts), tz=timezone.utc).isoformat()
             return entry
+
+        session = self._get_session(user_id, conversation_id)
+        if not session:
+            return {}
+
+        intent = session.get("intent") or {}
+        metadata: Dict[str, Any] = {
+            "event": session.get("event"),
+            "status": session.get("status"),
+            "missing_fields": session.get("missingFields") or [],
+            "next_field": session.get("nextField"),
+            "pending_question": session.get("pendingQuestion"),
+            "choices": session.get("choices") or [],
+            "error": session.get("errorMessage"),
+            "user_id": user_id,
+            "conversation_id": conversation_id,
+        }
+        metadata["from_network"] = intent.get("from_network")
+        metadata["from_token"] = intent.get("from_token")
+        metadata["to_network"] = intent.get("to_network")
+        metadata["to_token"] = intent.get("to_token")
+        metadata["amount"] = intent.get("amount")
+
+        history = self.get_history(user_id, conversation_id)
+        if history:
+            metadata["history"] = history
+
+        updated_at = session.get("updatedAt")
+        if updated_at:
+            metadata["updated_at"] = updated_at
+
+        return metadata
 
     def get_history(
         self,
@@ -222,7 +208,118 @@ class SwapStateRepository:
         conversation_id: str,
         limit: Optional[int] = None,
     ) -> List[Dict[str, Any]]:
-        key = self._key(user_id, conversation_id)
-        with self._lock:
-            return self._history_unlocked(key, limit)
+        if not self._use_gateway:
+            key = _identifier(user_id, conversation_id)
+            history = self._state["history"].get(key, [])
+            effective = limit or self._history_limit
+            result: List[Dict[str, Any]] = []
+            for item in sorted(history, key=lambda entry: entry.get("timestamp", 0), reverse=True)[:effective]:
+                entry = copy.deepcopy(item)
+                ts = entry.get("timestamp")
+                if ts is not None:
+                    entry["timestamp"] = datetime.fromtimestamp(float(ts), tz=timezone.utc).isoformat()
+                result.append(entry)
+            return result
 
+        effective_limit = limit or self._history_limit
+        result = self._client.list(
+            SWAP_HISTORY_ENTITY,
+            {
+                "where": {"userId": user_id, "conversationId": conversation_id},
+                "orderBy": {"recordedAt": "desc"},
+                "take": effective_limit,
+            },
+        )
+        data = result.get("data", []) if isinstance(result, dict) else []
+        history: List[Dict[str, Any]] = []
+        for entry in data:
+            history.append(
+                {
+                    "status": entry.get("status"),
+                    "from_network": entry.get("fromNetwork"),
+                    "from_token": entry.get("fromToken"),
+                    "to_network": entry.get("toNetwork"),
+                    "to_token": entry.get("toToken"),
+                    "amount": entry.get("amount"),
+                    "error": entry.get("errorMessage"),
+                    "timestamp": entry.get("recordedAt"),
+                }
+            )
+        return history
+
+    # ---- Gateway helpers --------------------------------------------------
+    def _get_session(self, user_id: str, conversation_id: str) -> Optional[Dict[str, Any]]:
+        identifier = _identifier(user_id, conversation_id)
+        try:
+            return self._client.get(SWAP_SESSION_ENTITY, identifier)
+        except PanoramaGatewayError as exc:
+            if exc.status_code == 404:
+                return None
+            raise
+
+    def _delete_session(self, user_id: str, conversation_id: str) -> None:
+        identifier = _identifier(user_id, conversation_id)
+        try:
+            self._client.delete(SWAP_SESSION_ENTITY, identifier)
+        except PanoramaGatewayError as exc:
+            if exc.status_code != 404:
+                raise
+
+    def _upsert_session(
+        self,
+        user_id: str,
+        conversation_id: str,
+        data: Dict[str, Any],
+    ) -> None:
+        identifier = _identifier(user_id, conversation_id)
+        payload = {**data, "updatedAt": _utc_now_iso()}
+        try:
+            self._client.update(SWAP_SESSION_ENTITY, identifier, payload)
+        except PanoramaGatewayError as exc:
+            if exc.status_code != 404:
+                raise
+            create_payload = {
+                "userId": user_id,
+                "conversationId": conversation_id,
+                "tenantId": self._settings.tenant_id,
+                **payload,
+            }
+            self._client.create(SWAP_SESSION_ENTITY, create_payload)
+
+    def _create_history_entry(
+        self,
+        user_id: str,
+        conversation_id: str,
+        summary: Dict[str, Any],
+    ) -> None:
+        history_payload = {
+            "userId": user_id,
+            "conversationId": conversation_id,
+            "status": summary.get("status"),
+            "fromNetwork": summary.get("from_network"),
+            "fromToken": summary.get("from_token"),
+            "toNetwork": summary.get("to_network"),
+            "toToken": summary.get("to_token"),
+            "amount": _as_float(summary.get("amount")),
+            "errorMessage": summary.get("error"),
+            "recordedAt": _utc_now_iso(),
+            "tenantId": self._settings.tenant_id,
+        }
+        self._client.create(SWAP_HISTORY_ENTITY, history_payload)
+
+    @staticmethod
+    def _session_payload(intent: Dict[str, Any], metadata: Dict[str, Any]) -> Dict[str, Any]:
+        missing = metadata.get("missing_fields") or []
+        if not isinstance(missing, list):
+            missing = list(missing)
+        return {
+            "status": metadata.get("status"),
+            "event": metadata.get("event"),
+            "intent": intent,
+            "missingFields": missing,
+            "nextField": metadata.get("next_field"),
+            "pendingQuestion": metadata.get("pending_question"),
+            "choices": metadata.get("choices"),
+            "errorMessage": metadata.get("error"),
+            "historyCursor": metadata.get("history_cursor") or 0,
+        }

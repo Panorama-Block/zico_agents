@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import logging
 import time
 from contextlib import contextmanager
 from contextvars import ContextVar
@@ -19,6 +20,7 @@ from src.agents.swap.storage import SwapStateRepository
 
 # ---------- Helpers ----------
 _STORE = SwapStateRepository.instance()
+logger = logging.getLogger(__name__)
 
 
 def _format_decimal(value: Decimal) -> str:
@@ -325,6 +327,15 @@ def _store_swap_metadata(
     if history:
         meta["history"] = history
     metadata.set_swap_agent(meta, intent.user_id, intent.conversation_id)
+    if logger.isEnabledFor(logging.DEBUG):
+        logger.debug(
+            "Swap metadata stored for user=%s conversation=%s done=%s error=%s meta=%s",
+            intent.user_id,
+            intent.conversation_id,
+            done,
+            error,
+            meta,
+        )
     return meta
 
 
@@ -407,6 +418,19 @@ def update_swap_intent_tool(
     intent.conversation_id = resolved_conversation
 
     try:
+        if logger.isEnabledFor(logging.DEBUG):
+            logger.debug(
+                "update_swap_intent_tool input user=%s conversation=%s from_network=%s "
+                "from_token=%s to_network=%s to_token=%s amount=%s",
+                user_id,
+                conversation_id,
+                from_network,
+                from_token,
+                to_network,
+                to_token,
+                amount,
+            )
+
         if from_network is not None:
             canonical_from = _validate_network(from_network)
             if canonical_from != intent.from_network:
@@ -456,6 +480,13 @@ def update_swap_intent_tool(
     except ValueError as exc:
         message = str(exc)
         lowered = message.lower()
+        if logger.isEnabledFor(logging.INFO):
+            logger.info(
+                "Swap intent validation issue for user=%s conversation=%s: %s",
+                intent.user_id,
+                intent.conversation_id,
+                message,
+            )
         if "network" in lowered:
             return _response(
                 intent,
@@ -477,6 +508,13 @@ def update_swap_intent_tool(
                 error=message,
             )
         return _response(intent, "Please correct the input.", error=message)
+    except Exception as exc:
+        logger.exception(
+            "Unexpected error updating swap intent for user=%s conversation=%s",
+            intent.user_id,
+            intent.conversation_id,
+        )
+        return _response(intent, "Please try again with the swap details.", error=str(exc))
 
     if intent.from_network is None:
         return _response(

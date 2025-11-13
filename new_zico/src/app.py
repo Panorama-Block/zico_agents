@@ -33,6 +33,7 @@ app.add_middleware(
 
 # Instantiate Supervisor agent (singleton LLM)
 supervisor = Supervisor(Config.get_llm())
+logger = logging.getLogger(__name__)
 
 class ChatRequest(BaseModel):
     message: ChatMessage
@@ -115,6 +116,21 @@ def _map_agent_type(agent_name: str) -> str:
     return mapping.get(agent_name, "supervisor")
 
 
+def _sanitize_user_message_content(content: str | None) -> str | None:
+    """Strip wrapper prompts (e.g., 'User Message: ...') the frontend might send."""
+    if not content:
+        return content
+    text = content.strip()
+    marker = "user message:"
+    lowered = text.lower()
+    idx = lowered.rfind(marker)
+    if idx != -1:
+        candidate = text[idx + len(marker):].strip()
+        if candidate:
+            return candidate
+    return text
+
+
 def _resolve_identity(request: ChatRequest) -> tuple[str, str]:
     """Ensure each request has a stable user and conversation identifier."""
 
@@ -151,9 +167,17 @@ def get_conversations(request: Request):
 
 @app.post("/chat")
 def chat(request: ChatRequest):
-    print("request: ", request)
+    user_id: str | None = None
+    conversation_id: str | None = None
     try:
+        logger.debug("Received chat payload: %s", request.model_dump())
         user_id, conversation_id = _resolve_identity(request)
+        logger.debug(
+            "Resolved chat identity user=%s conversation=%s wallet=%s",
+            user_id,
+            conversation_id,
+            (request.wallet_address or "").strip() if request.wallet_address else None,
+        )
 
         wallet = request.wallet_address.strip() if request.wallet_address else None
         if wallet and wallet.lower() == "default":
@@ -168,6 +192,11 @@ def chat(request: ChatRequest):
             wallet_address=wallet,
             display_name=display_name,
         )
+
+        if request.message.role == "user":
+            clean_content = _sanitize_user_message_content(request.message.content)
+            if clean_content is not None:
+                request.message.content = clean_content
 
         # Add the user message to the conversation
         chat_manager_instance.add_message(
@@ -188,12 +217,16 @@ def chat(request: ChatRequest):
             conversation_id=conversation_id,
             user_id=user_id,
         )
+        logger.debug(
+            "Supervisor returned result for user=%s conversation=%s: %s",
+            user_id,
+            conversation_id,
+            result,
+        )
         
         # Add the agent's response to the conversation
         if result and isinstance(result, dict):
-            print("result: ", result)
             agent_name = result.get("agent", "supervisor")
-            print("agent_name: ", agent_name)
             agent_name = _map_agent_type(agent_name)
 
             # Build response metadata and enrich with coin info for crypto price queries
@@ -210,7 +243,12 @@ def chat(request: ChatRequest):
                 if swap_meta:
                     response_metadata.update(swap_meta)
                     swap_meta_snapshot = swap_meta
-            print("response_metadata: ", response_metadata)
+            logger.debug(
+                "Response metadata for user=%s conversation=%s: %s",
+                user_id,
+                conversation_id,
+                response_metadata,
+            )
             
             # Create a ChatMessage from the supervisor response
             response_message = ChatMessage(
@@ -266,6 +304,11 @@ def chat(request: ChatRequest):
         
         return {"response": "No response available", "agent": "supervisor"}
     except Exception as e:
+        logger.exception(
+            "Chat handler failed for user=%s conversation=%s",
+            user_id,
+            conversation_id,
+        )
         raise HTTPException(status_code=500, detail=str(e))
 
 # Include chat manager router

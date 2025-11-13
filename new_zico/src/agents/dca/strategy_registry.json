@@ -1,0 +1,81 @@
+[
+    {
+        "strategy_id": "swap_dca_daily_v1",
+        "version": "2024-06-01",
+        "name": "Daily Stablecoin to Bluechip DCA",
+        "description": "Dollar-cost average from USD stablecoins into approved bluechip assets using conservative risk parameters.",
+        "tokens_supported": [
+            {
+                "from": ["USDC", "USDT", "USDt"],
+                "to": ["AVAX", "BTC.b", "ETH"]
+            }
+        ],
+        "cadence_options": ["daily", "weekly"],
+        "amount_bounds": {
+            "min_usd": 25,
+            "max_usd": 25000,
+            "per_cycle_cap": 2500
+        },
+        "slippage_bps": {
+            "max": 75,
+            "recommended": 40
+        },
+        "risk_tier": "conservative",
+        "defaults": {
+            "cadence": "daily",
+            "iterations": 30,
+            "start_on": "next_business_day",
+            "venue": "pangolin",
+            "slippage_bps": 40
+        },
+        "guardrails": [
+            "Never exceed 75 bps max slippage per swap leg.",
+            "Pause the schedule if price drops more than 12% intraday."
+        ],
+        "compliance_notes": [
+            "KYC required for notional volume above 50k USD in a rolling 30-day window."
+        ],
+        "context": "Applies to swap-based DCA flows where the funding asset is a USD stablecoin and the target asset is on the Avalanche network."
+    },
+    {
+        "strategy_id": "swap_dca_weekly_growth_v1",
+        "version": "2024-05-15",
+        "name": "Weekly Growth Token Rotation",
+        "description": "Rotate stablecoin treasury holdings into approved growth tokens on a weekly cadence with optional stop-loss triggers.",
+        "tokens_supported": [
+            {
+                "from": ["USDC", "USDT"],
+                "to": ["JOE", "ARB", "LINK"]
+            }
+        ],
+        "cadence_options": ["weekly", "monthly"],
+        "amount_bounds": {
+            "min_usd": 100,
+            "max_usd": 100000,
+            "per_cycle_cap": 10000
+        },
+        "slippage_bps": {
+            "max": 120,
+            "recommended": 80
+        },
+        "risk_tier": "moderate",
+        "defaults": {
+            "cadence": "weekly",
+            "iterations": 12,
+            "start_on": "next_scheduled_window",
+            "venue": "traderjoe",
+            "slippage_bps": 80,
+            "stop_conditions": [
+                "Pause if target asset rallies 20% week-over-week."
+            ]
+        },
+        "guardrails": [
+            "Pre-trade exposure report must be filed for allocations above 25k USD per cycle.",
+            "Respect strategy whitelist; do not route to non-approved pools."
+        ],
+        "compliance_notes": [
+            "Requires operations review if cumulative deployed capital exceeds 250k USD."
+        ],
+        "context": "Tailored for teams rotating into growth tokens while maintaining automated stop conditions and compliance hand-offs."
+    }
+]

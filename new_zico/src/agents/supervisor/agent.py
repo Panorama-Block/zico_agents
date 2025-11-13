@@ -13,8 +13,12 @@ from src.agents.crypto_data.agent import CryptoDataAgent
 from src.agents.database.agent import DatabaseAgent
 from src.agents.default.agent import DefaultAgent
 from src.agents.swap.agent import SwapAgent
+from src.agents.swap.config import SwapConfig
 from src.agents.swap.tools import swap_session
 from src.agents.swap.prompt import SWAP_AGENT_SYSTEM_PROMPT
+from src.agents.dca.agent import DcaAgent
+from src.agents.dca.tools import dca_session
+from src.agents.dca.prompt import DCA_AGENT_SYSTEM_PROMPT
 from src.agents.search.agent import SearchAgent
 from src.agents.database.client import is_database_available
 
@@ -64,6 +68,13 @@ class Supervisor:
             "- swap_agent: Handles swap operations on the Avalanche network and any other swap question related.\n"
         )
 
+        dcaAgent = DcaAgent(llm)
+        self.dca_agent = dcaAgent.agent
+        agents.append(self.dca_agent)
+        available_agents_text += (
+            "- dca_agent: Plans DCA swap workflows, consulting strategy docs, validating parameters, and confirming automation metadata.\n"
+        )
+
         searchAgent = SearchAgent(llm)
         self.search_agent = searchAgent.agent
         agents.append(self.search_agent)
@@ -76,8 +87,8 @@ class Supervisor:
         agents.append(self.default_agent)
 
         # Track known agent names for response extraction
-        self.known_agent_names = {"crypto_agent", "database_agent", "swap_agent", "search_agent", "default_agent"}
-        self.specialized_agents = {"crypto_agent", "database_agent", "swap_agent", "search_agent"}
+        self.known_agent_names = {"crypto_agent", "database_agent", "swap_agent", "dca_agent", "search_agent", "default_agent"}
+        self.specialized_agents = {"crypto_agent", "database_agent", "swap_agent", "dca_agent", "search_agent"}
         self.failure_markers = (
             "cannot fulfill",
             "can't fulfill",
@@ -154,6 +165,8 @@ class Supervisor:
         # System prompt to guide the supervisor
         system_prompt = f"""You are a helpful supervisor that routes user queries to the appropriate specialized agents.
 
+Always respond in English, even if the user communicates in another language.
+
 Available agents:
 {available_agents_text}
 
@@ -175,10 +188,17 @@ Examples of swap queries to delegate:
 - What are the available tokens for swapping?
 - I want to swap 100 USD for AVAX
 
+Examples of dca queries to delegate:
+- Help me schedule a daily DCA from USDC to AVAX
+- Suggest a weekly swap DCA strategy
+- I want to automate a monthly swap from token A to token B
+
 When a swap conversation is already underway (the user is still providing swap
 details or the swap_agent requested follow-up information), keep routing those
 messages to the swap_agent until it has gathered every field and signals the
 swap intent is ready.
+
+When a DCA conversation is already underway (the user is reviewing strategy recommendations or adjusting schedule parameters), keep routing messages to the dca_agent until the workflow is confirmed or cancelled.
 
 {database_examples}
 
@@ -199,6 +219,8 @@ Examples of general queries to handle directly:
         )
 
         self.app = self.supervisor.compile()
+
+        self._swap_network_terms, self._swap_token_terms = self._build_swap_detection_terms()
 
     def _is_handoff_text(self, text: str) -> bool:
         if not text:
@@ -323,6 +345,25 @@ Examples of general queries to handle directly:
         agent, text, messages_out = self._extract_response_from_graph(response)
         return agent, text, messages_out
 
+    def _invoke_dca_agent(self, langchain_messages):
+        scoped_messages = [SystemMessage(content=DCA_AGENT_SYSTEM_PROMPT)]
+        scoped_messages.extend(langchain_messages)
+        try:
+            with dca_session(
+                user_id=self._active_user_id,
+                conversation_id=self._active_conversation_id,
+            ):
+                response = self.dca_agent.invoke({"messages": scoped_messages})
+        except Exception as exc:
+            print(f"Error invoking dca agent directly: {exc}")
+            return None
+
+        if not response:
+            return None
+
+        agent, text, messages_out = self._extract_response_from_graph(response)
+        return agent, text, messages_out
+
     def _extract_response_from_graph(self, response: Any) -> Tuple[str, str, list]:
         messages_out = response.get("messages", []) if isinstance(response, dict) else []
         final_response = None
@@ -413,6 +454,45 @@ Examples of general queries to handle directly:
             fallback_agent = "search_agent"
         return fallback_agent, fallback_text, fallback_messages
 
+    def _detect_pending_followups(self, messages: List[Any]) -> tuple[bool, bool]:
+        awaiting_swap = False
+        awaiting_dca = False
+        def _get_entry_value(entry: Any, dict_keys: tuple[str, ...], attr_name: str) -> Any:
+            """Support both camelCase (gateway) and snake_case (local) message fields."""
+            if isinstance(entry, dict):
+                for key in dict_keys:
+                    if key in entry:
+                        return entry.get(key)
+                return None
+            return getattr(entry, attr_name, None)
+
+        for entry in reversed(messages):
+            role_raw = _get_entry_value(entry, ("role", "Role"), "role")
+            agent_label_raw = _get_entry_value(entry, ("agent_name", "agentName"), "agent_name")
+            action_type_raw = _get_entry_value(entry, ("action_type", "actionType"), "action_type")
+            requires_action_raw = _get_entry_value(
+                entry,
+                ("requires_action", "requiresAction"),
+                "requires_action",
+            )
+            metadata_payload = _get_entry_value(entry, ("metadata",), "metadata") or {}
+
+            role = str(role_raw or "").lower()
+            if role != "assistant":
+                continue
+            agent_label = str(agent_label_raw or "").lower()
+            action_type = str(action_type_raw or "").lower()
+            requires_action = bool(requires_action_raw)
+            status = str((metadata_payload.get("status") if isinstance(metadata_payload, dict) else "") or "").lower()
+
+            if requires_action and status != "ready":
+                if action_type == "swap" or "swap" in agent_label:
+                    awaiting_swap = True
+                if action_type == "dca" or "dca" in agent_label:
+                    awaiting_dca = True
+            break
+        return awaiting_swap, awaiting_dca
+
     def _build_metadata(self, agent_name: str, messages_out) -> dict:
         if agent_name == "swap_agent":
             swap_meta = metadata.get_swap_agent(
@@ -430,12 +510,72 @@ Examples of general queries to handle directly:
                 else:
                     swap_meta = swap_meta.copy()
             return swap_meta if swap_meta else {}
+        if agent_name == "dca_agent":
+            dca_meta = metadata.get_dca_agent(
+                user_id=self._active_user_id,
+                conversation_id=self._active_conversation_id,
+            )
+            if dca_meta:
+                history = metadata.get_dca_history(
+                    user_id=self._active_user_id,
+                    conversation_id=self._active_conversation_id,
+                )
+                if history:
+                    dca_meta = dca_meta.copy()
+                    dca_meta.setdefault("history", history)
+                else:
+                    dca_meta = dca_meta.copy()
+            return dca_meta if dca_meta else {}
         if agent_name == "crypto_agent":
             tool_meta = self._collect_tool_metadata(messages_out)
             if tool_meta:
                 metadata.set_crypto_data_agent(tool_meta)
             return metadata.get_crypto_data_agent() or {}
         return {}
+
+    def _build_swap_detection_terms(self) -> tuple[set[str], set[str]]:
+        networks: set[str] = set()
+        tokens: set[str] = set()
+        try:
+            for net in SwapConfig.list_networks():
+                lowered = net.lower()
+                networks.add(lowered)
+                try:
+                    for token in SwapConfig.list_tokens(net):
+                        tokens.add(token.lower())
+                except ValueError:
+                    continue
+        except Exception:
+            return set(), set()
+        return networks, tokens
+
+    def _is_swap_like_request(self, messages: List[ChatMessage]) -> bool:
+        for msg in reversed(messages):
+            if msg.get("role") != "user":
+                continue
+            content = (msg.get("content") or "").strip()
+            if not content:
+                continue
+            lowered = content.lower()
+            swap_keywords = (
+                "swap",
+                "swapping",
+                "exchange",
+                "convert",
+                "trade",
+            )
+            if not any(keyword in lowered for keyword in swap_keywords):
+                return False
+            if any(term and term in lowered for term in self._swap_network_terms):
+                return True
+            if any(term and term in lowered for term in self._swap_token_terms):
+                return True
+            if "token" in lowered or any(ch.isdigit() for ch in lowered):
+                return True
+            # Default to True if the user explicitly mentioned swap-related keywords,
+            # even if they haven't provided networks/tokens yet.
+            return True
+        return False
 
     def invoke(
         self,
@@ -445,7 +585,7 @@ Examples of general queries to handle directly:
     ) -> dict:
         self._active_user_id = user_id
         self._active_conversation_id = conversation_id
-        swap_state = metadata.get_swap_agent(user_id=user_id, conversation_id=conversation_id)
+        awaiting_swap, awaiting_dca = self._detect_pending_followups(messages)
 
         langchain_messages = []
         for msg in messages:
@@ -455,6 +595,71 @@ Examples of general queries to handle directly:
                 langchain_messages.append(SystemMessage(content=msg.get("content", "")))
             elif msg.get("role") == "assistant":
                 langchain_messages.append(AIMessage(content=msg.get("content", "")))
+
+        langchain_messages.insert(
+            0,
+            SystemMessage(content="Always respond in English, regardless of the user's language."),
+        )
+
+        dca_state = metadata.get_dca_agent(user_id=user_id, conversation_id=conversation_id)
+        swap_state = metadata.get_swap_agent(user_id=user_id, conversation_id=conversation_id)
+
+        if not swap_state and self._is_swap_like_request(messages):
+            swap_result = self._invoke_swap_agent(langchain_messages)
+            if swap_result:
+                final_agent, cleaned_response, messages_out = swap_result
+                meta = self._build_metadata(final_agent, messages_out)
+                self._active_user_id = None
+                self._active_conversation_id = None
+                return {
+                    "messages": messages_out,
+                    "agent": final_agent,
+                    "response": cleaned_response or "Sorry, no meaningful response was returned.",
+                    "metadata": meta,
+                }
+
+        in_progress_statuses = {"consulting", "recommendation", "confirmation"}
+
+        if dca_state and dca_state.get("status") in in_progress_statuses:
+            dca_result = self._invoke_dca_agent(langchain_messages)
+            if dca_result:
+                final_agent, cleaned_response, messages_out = dca_result
+                meta = self._build_metadata(final_agent, messages_out)
+                self._active_user_id = None
+                self._active_conversation_id = None
+                return {
+                    "messages": messages_out,
+                    "agent": final_agent,
+                    "response": cleaned_response or "Sorry, no meaningful response was returned.",
+                    "metadata": meta,
+                }
+            stage = dca_state.get("status")
+            next_field = dca_state.get("next_field")
+            pending_question = dca_state.get("pending_question")
+            guidance_parts = [
+                "There is an in-progress DCA planning session for this conversation.",
+                "Keep routing messages to the dca_agent until the workflow is confirmed or the user cancels.",
+            ]
+            if stage:
+                guidance_parts.append(f"The current stage is: {stage}.")
+            if next_field:
+                guidance_parts.append(f"The next field to collect is: {next_field}.")
+            if pending_question:
+                guidance_parts.append(f"Continue the DCA flow by asking: {pending_question}")
+            langchain_messages.insert(0, SystemMessage(content=" ".join(guidance_parts)))
+        elif awaiting_dca:
+            dca_result = self._invoke_dca_agent(langchain_messages)
+            if dca_result:
+                final_agent, cleaned_response, messages_out = dca_result
+                meta = self._build_metadata(final_agent, messages_out)
+                self._active_user_id = None
+                self._active_conversation_id = None
+                return {
+                    "messages": messages_out,
+                    "agent": final_agent,
+                    "response": cleaned_response or "Sorry, no meaningful response was returned.",
+                    "metadata": meta,
+                }
 
         if swap_state and swap_state.get("status") == "collecting":
             swap_result = self._invoke_swap_agent(langchain_messages)
@@ -482,11 +687,25 @@ Examples of general queries to handle directly:
                 guidance_parts.append(f"Continue the swap flow by asking: {pending_question}")
             guidance_text = " ".join(guidance_parts)
             langchain_messages.insert(0, SystemMessage(content=guidance_text))
+        elif awaiting_swap:
+            swap_result = self._invoke_swap_agent(langchain_messages)
+            if swap_result:
+                final_agent, cleaned_response, messages_out = swap_result
+                meta = self._build_metadata(final_agent, messages_out)
+                self._active_user_id = None
+                self._active_conversation_id = None
+                return {
+                    "messages": messages_out,
+                    "agent": final_agent,
+                    "response": cleaned_response or "Sorry, no meaningful response was returned.",
+                    "metadata": meta,
+                }
 
         try:
             with swap_session(user_id=user_id, conversation_id=conversation_id):
-                response = self.app.invoke({"messages": langchain_messages})
-                print("DEBUG: response", response)
+                with dca_session(user_id=user_id, conversation_id=conversation_id):
+                    response = self.app.invoke({"messages": langchain_messages})
+                    print("DEBUG: response", response)
         except Exception as e:
             print(f"Error in Supervisor: {e}")
             return {

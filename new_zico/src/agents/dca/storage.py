@@ -1,4 +1,5 @@
-"""Gateway-backed storage for swap intents with local fallback."""
+"""State management for DCA intents with optional Panorama gateway persistence."""
+
 from __future__ import annotations
 
 import copy
@@ -15,8 +16,8 @@ from src.integrations.panorama_gateway import (
     get_panorama_settings,
 )
 
-SWAP_SESSION_ENTITY = "swap-sessions"
-SWAP_HISTORY_ENTITY = "swap-histories"
+DCA_SESSION_ENTITY = "dca-sessions"
+DCA_HISTORY_ENTITY = "dca-histories"
 
 
 def _utc_now_iso() -> str:
@@ -36,10 +37,10 @@ def _as_float(value: Any) -> Optional[float]:
         return None
 
 
-class SwapStateRepository:
-    """Stores swap agent state via Panorama's gateway or an in-memory fallback."""
+class DcaStateRepository:
+    """Stores DCA agent state via Panorama's gateway with local fallback."""
 
-    _instance: "SwapStateRepository" | None = None
+    _instance: "DcaStateRepository" | None = None
     _instance_lock: Lock = Lock()
 
     def __init__(
@@ -56,36 +57,32 @@ class SwapStateRepository:
             self._client = client or PanoramaGatewayClient(self._settings)
             self._use_gateway = True
         except ValueError:
-            # PANORAMA_GATEWAY_URL or JWT secrets not configured – fall back to local store.
             self._settings = None
             self._client = None
             self._use_gateway = False
-        self._init_local_store()
+            self._init_local_store()
 
     def _init_local_store(self) -> None:
         if not hasattr(self, "_state"):
             self._state = {"intents": {}, "metadata": {}, "history": {}}
 
-    def _tenant_id(self) -> str:
-        return self._settings.tenant_id if self._settings else "tenant-agent"
-
     def _fallback_to_local_store(self) -> None:
         if self._use_gateway:
-            self._logger.warning("Panorama gateway unavailable for swap state; switching to in-memory fallback.")
+            self._logger.warning("Panorama gateway unavailable for DCA state; switching to in-memory fallback.")
         self._use_gateway = False
         self._init_local_store()
 
     def _handle_gateway_failure(self, exc: PanoramaGatewayError) -> None:
         self._logger.warning(
-            "Panorama gateway error (%s) for swap repository: %s",
+            "Panorama gateway error (%s) for DCA repository: %s",
             getattr(exc, "status_code", "unknown"),
             getattr(exc, "payload", exc),
         )
         self._fallback_to_local_store()
 
-    # ---- Singleton helpers -----------------------------------------------
+    # ---- Singleton helpers -------------------------------------------------
     @classmethod
-    def instance(cls) -> "SwapStateRepository":
+    def instance(cls) -> "DcaStateRepository":
         if cls._instance is None:
             with cls._instance_lock:
                 if cls._instance is None:
@@ -97,7 +94,7 @@ class SwapStateRepository:
         with cls._instance_lock:
             cls._instance = None
 
-    # ---- Core API ---------------------------------------------------------
+    # ---- Core API ----------------------------------------------------------
     def load_intent(self, user_id: str, conversation_id: str) -> Optional[Dict[str, Any]]:
         if not self._use_gateway:
             self._init_local_store()
@@ -224,6 +221,7 @@ class SwapStateRepository:
         metadata: Dict[str, Any] = {
             "event": session.get("event"),
             "status": session.get("status"),
+            "stage": session.get("stage"),
             "missing_fields": session.get("missingFields") or [],
             "next_field": session.get("nextField"),
             "pending_question": session.get("pendingQuestion"),
@@ -232,11 +230,7 @@ class SwapStateRepository:
             "user_id": user_id,
             "conversation_id": conversation_id,
         }
-        metadata["from_network"] = intent.get("from_network")
-        metadata["from_token"] = intent.get("from_token")
-        metadata["to_network"] = intent.get("to_network")
-        metadata["to_token"] = intent.get("to_token")
-        metadata["amount"] = intent.get("amount")
+        metadata.update(intent)
 
         history = self.get_history(user_id, conversation_id)
         if history:
@@ -245,7 +239,6 @@ class SwapStateRepository:
         updated_at = session.get("updatedAt")
         if updated_at:
             metadata["updated_at"] = updated_at
-
         return metadata
 
     def get_history(
@@ -255,22 +248,23 @@ class SwapStateRepository:
         limit: Optional[int] = None,
     ) -> List[Dict[str, Any]]:
         if not self._use_gateway:
-            key = _identifier(user_id, conversation_id)
-            history = self._state["history"].get(key, [])
-            effective = limit or self._history_limit
-            result: List[Dict[str, Any]] = []
-            for item in sorted(history, key=lambda entry: entry.get("timestamp", 0), reverse=True)[:effective]:
-                entry = copy.deepcopy(item)
-                ts = entry.get("timestamp")
+            self._init_local_store()
+            history = self._state["history"].get(_identifier(user_id, conversation_id), [])
+            if not history:
+                return []
+            records = copy.deepcopy(history)
+            if limit:
+                records = records[-limit:]
+            for record in records:
+                ts = record.get("timestamp")
                 if ts is not None:
-                    entry["timestamp"] = datetime.fromtimestamp(float(ts), tz=timezone.utc).isoformat()
-                result.append(entry)
-            return result
+                    record["timestamp"] = datetime.fromtimestamp(float(ts), tz=timezone.utc).isoformat()
+            return records
 
         effective_limit = limit or self._history_limit
         try:
             result = self._client.list(
-                SWAP_HISTORY_ENTITY,
+                DCA_HISTORY_ENTITY,
                 {
                     "where": {"userId": user_id, "conversationId": conversation_id},
                     "orderBy": {"recordedAt": "desc"},
@@ -283,126 +277,118 @@ class SwapStateRepository:
             self._handle_gateway_failure(exc)
             return self.get_history(user_id, conversation_id, limit)
         except ValueError:
-            self._logger.warning("Invalid swap history response from gateway; falling back to local store.")
+            self._logger.warning("Invalid DCA history response from gateway; falling back to local store.")
             self._fallback_to_local_store()
             return self.get_history(user_id, conversation_id, limit)
         data = result.get("data", []) if isinstance(result, dict) else []
         history: List[Dict[str, Any]] = []
         for entry in data:
+            summary_text = entry.get("summary")
+            meta_payload = entry.get("metadata") or {}
+            if not meta_payload:
+                meta_payload = {
+                    "workflow_type": entry.get("workflowType"),
+                    "cadence": entry.get("cadence"),
+                    "tokens": entry.get("tokens"),
+                    "amounts": entry.get("amounts"),
+                    "strategy": entry.get("strategy"),
+                    "venue": entry.get("venue"),
+                    "slippage_bps": entry.get("slippageBps"),
+                    "stop_conditions": entry.get("stopConditions"),
+                }
+            error_message = entry.get("errorMessage")
+            if error_message:
+                meta_payload = dict(meta_payload)
+                meta_payload["error"] = error_message
             history.append(
                 {
-                    "status": entry.get("status"),
-                    "from_network": entry.get("fromNetwork"),
-                    "from_token": entry.get("fromToken"),
-                    "to_network": entry.get("toNetwork"),
-                    "to_token": entry.get("toToken"),
-                    "amount": entry.get("amount"),
-                    "error": entry.get("errorMessage"),
                     "timestamp": entry.get("recordedAt"),
+                    "summary": summary_text,
+                    "metadata": meta_payload,
                 }
             )
         return history
 
-    # ---- Gateway helpers --------------------------------------------------
-    def _get_session(self, user_id: str, conversation_id: str) -> Optional[Dict[str, Any]]:
+    # ---- Gateway helpers ---------------------------------------------------
+    def _session_payload(self, intent: Dict[str, Any], metadata: Dict[str, Any]) -> Dict[str, Any]:
+        payload = {
+            "intent": intent,
+            "event": metadata.get("event"),
+            "status": metadata.get("status"),
+            "stage": metadata.get("stage"),
+            "missingFields": metadata.get("missing_fields") or [],
+            "nextField": metadata.get("next_field"),
+            "pendingQuestion": metadata.get("ask") or metadata.get("pending_question"),
+            "choices": metadata.get("choices") or [],
+            "errorMessage": metadata.get("error"),
+            "updatedAt": metadata.get("updated_at") or _utc_now_iso(),
+        }
+        return payload
+
+    def _get_session(self, user_id: str, conversation_id: str) -> Dict[str, Any] | None:
         identifier = _identifier(user_id, conversation_id)
         try:
-            return self._client.get(SWAP_SESSION_ENTITY, identifier)
+            return self._client.get(DCA_SESSION_ENTITY, identifier)
         except PanoramaGatewayError as exc:
             if exc.status_code == 404:
                 return None
             self._handle_gateway_failure(exc)
             return None
 
-    def _delete_session(self, user_id: str, conversation_id: str) -> None:
+    def _upsert_session(self, user_id: str, conversation_id: str, payload: Dict[str, Any]) -> None:
         identifier = _identifier(user_id, conversation_id)
+        record = {**payload, "updatedAt": _utc_now_iso()}
         try:
-            self._client.delete(SWAP_SESSION_ENTITY, identifier)
+            self._client.update(DCA_SESSION_ENTITY, identifier, record)
         except PanoramaGatewayError as exc:
             if exc.status_code != 404:
-                self._handle_gateway_failure(exc)
-                raise
-
-    def _upsert_session(
-        self,
-        user_id: str,
-        conversation_id: str,
-        data: Dict[str, Any],
-    ) -> None:
-        identifier = _identifier(user_id, conversation_id)
-        payload = {**data, "updatedAt": _utc_now_iso()}
-        try:
-            self._client.update(SWAP_SESSION_ENTITY, identifier, payload)
-        except PanoramaGatewayError as exc:
-            if exc.status_code != 404:
-                self._handle_gateway_failure(exc)
                 raise
             create_payload = {
                 "userId": user_id,
                 "conversationId": conversation_id,
-                "tenantId": self._tenant_id(),
-                **payload,
+                "tenantId": self._settings.tenant_id,
+                **record,
             }
             try:
-                self._client.create(SWAP_SESSION_ENTITY, create_payload)
+                self._client.create(DCA_SESSION_ENTITY, create_payload)
             except PanoramaGatewayError as create_exc:
                 if create_exc.status_code == 409:
                     return
                 if create_exc.status_code == 404:
-                    self._handle_gateway_failure(create_exc)
                     raise
-                self._handle_gateway_failure(create_exc)
                 raise
 
-    def _create_history_entry(
-        self,
-        user_id: str,
-        conversation_id: str,
-        summary: Dict[str, Any],
-    ) -> None:
+    def _delete_session(self, user_id: str, conversation_id: str) -> None:
+        identifier = _identifier(user_id, conversation_id)
+        try:
+            self._client.delete(DCA_SESSION_ENTITY, identifier)
+        except PanoramaGatewayError as exc:
+            if exc.status_code != 404:
+                self._handle_gateway_failure(exc)
+                raise
+
+    def _create_history_entry(self, user_id: str, conversation_id: str, summary: Dict[str, Any]) -> None:
         history_payload = {
             "userId": user_id,
             "conversationId": conversation_id,
-            "status": summary.get("status"),
-            "fromNetwork": summary.get("from_network"),
-            "fromToken": summary.get("from_token"),
-            "toNetwork": summary.get("to_network"),
-            "toToken": summary.get("to_token"),
-            "amount": _as_float(summary.get("amount")),
+            "summary": summary.get("summary"),
+            "workflowType": summary.get("workflow_type"),
+            "cadence": summary.get("cadence"),
+            "tokens": summary.get("tokens"),
+            "amounts": summary.get("amounts"),
+            "strategy": summary.get("strategy"),
+            "venue": summary.get("venue"),
+            "slippageBps": summary.get("slippage_bps"),
+            "stopConditions": summary.get("stop_conditions"),
+            "metadata": summary,
             "errorMessage": summary.get("error"),
             "recordedAt": _utc_now_iso(),
-            "tenantId": self._tenant_id(),
+            "tenantId": self._settings.tenant_id,
         }
-        if self._logger.isEnabledFor(logging.DEBUG):
-            self._logger.debug(
-                "Persisting swap history for user=%s conversation=%s payload=%s",
-                user_id,
-                conversation_id,
-                history_payload,
-            )
         try:
-            self._client.create(SWAP_HISTORY_ENTITY, history_payload)
+            self._client.create(DCA_HISTORY_ENTITY, history_payload)
         except PanoramaGatewayError as exc:
             if exc.status_code == 404:
-                self._handle_gateway_failure(exc)
                 raise
             elif exc.status_code != 409:
-                self._handle_gateway_failure(exc)
                 raise
-
-    @staticmethod
-    def _session_payload(intent: Dict[str, Any], metadata: Dict[str, Any]) -> Dict[str, Any]:
-        missing = metadata.get("missing_fields") or []
-        if not isinstance(missing, list):
-            missing = list(missing)
-        return {
-            "status": metadata.get("status"),
-            "event": metadata.get("event"),
-            "intent": intent,
-            "missingFields": missing,
-            "nextField": metadata.get("next_field"),
-            "pendingQuestion": metadata.get("pending_question"),
-            "choices": metadata.get("choices"),
-            "errorMessage": metadata.get("error"),
-            "historyCursor": metadata.get("history_cursor") or 0,
-        }

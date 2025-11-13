@@ -4,12 +4,15 @@ import json
 import time
 import uuid
 from dataclasses import asdict
+import logging
 from typing import Any, Dict, Iterable, Optional
 
 import httpx
 import jwt
 
 from .config import PanoramaGatewaySettings, get_panorama_settings
+
+logger = logging.getLogger(__name__)
 
 
 class PanoramaGatewayError(RuntimeError):
@@ -82,6 +85,18 @@ class PanoramaGatewayClient:
             "Accept": "application/json",
         }
 
+    @staticmethod
+    def _truncate_payload(payload: Any, limit: int = 512) -> Any:
+        if payload is None:
+            return None
+        try:
+            text = json.dumps(payload)
+        except (TypeError, ValueError):
+            text = str(payload)
+        if len(text) <= limit:
+            return payload
+        return text[:limit] + "...<truncated>"
+
     def _request(
         self,
         method: str,
@@ -94,6 +109,15 @@ class PanoramaGatewayClient:
         headers = self._default_headers()
         if method.upper() in {"POST", "PATCH", "PUT", "DELETE"}:
             headers["Idempotency-Key"] = idempotency_key or str(uuid.uuid4())
+
+        if logger.isEnabledFor(logging.DEBUG):
+            logger.debug(
+                "Panorama %s %s params=%s body=%s",
+                method,
+                path,
+                params,
+                self._truncate_payload(json_body),
+            )
 
         response = self._client.request(
             method=method,
@@ -109,14 +133,42 @@ class PanoramaGatewayClient:
                 payload = response.json()
             except ValueError:
                 payload = response.text
+            logger.warning(
+                "Panorama error %s %s status=%s payload=%s",
+                method,
+                path,
+                response.status_code,
+                payload,
+            )
             raise PanoramaGatewayError(message, response.status_code, payload)
 
         if response.status_code == 204:
+            if logger.isEnabledFor(logging.DEBUG):
+                logger.debug("Panorama %s %s status=204 no-content", method, path)
             return None
 
         if response.headers.get("content-type", "").startswith("application/json"):
-            return response.json()
-        return response.text
+            body = response.json()
+            if logger.isEnabledFor(logging.DEBUG):
+                logger.debug(
+                    "Panorama %s %s status=%s body=%s",
+                    method,
+                    path,
+                    response.status_code,
+                    self._truncate_payload(body),
+                )
+            return body
+
+        text = response.text
+        if logger.isEnabledFor(logging.DEBUG):
+            logger.debug(
+                "Panorama %s %s status=%s body=%s",
+                method,
+                path,
+                response.status_code,
+                text[:512] + ("...<truncated>" if len(text) > 512 else ""),
+            )
+        return text
 
     # ---- CRUD facades ------------------------------------------------------
     def list(self, entity: str, query: Dict[str, Any] | None = None) -> Dict[str, Any]:

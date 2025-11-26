@@ -57,6 +57,7 @@ AVAILABLE_AGENTS = [
     {"name": "base", "human_readable_name": "Base Transaction Manager", "description": "Handle transactions on Base network."},
     {"name": "mor rewards", "human_readable_name": "MOR Rewards Tracker", "description": "Track MOR rewards and balances."},
     {"name": "mor claims", "human_readable_name": "MOR Claims Agent", "description": "Claim MOR tokens."},
+    {"name": "lending", "human_readable_name": "Lending Agent", "description": "Supply, borrow, repay, or withdraw assets."},
 ]
 
 # Default to a small, reasonable subset
@@ -74,6 +75,7 @@ AGENT_COMMANDS = [
     {"command": "dca", "name": "DCA Strategy Manager", "description": "Plan a dollar-cost averaging strategy."},
     {"command": "base", "name": "Base Transaction Manager", "description": "Send tokens and swap on Base."},
     {"command": "rewards", "name": "MOR Rewards Tracker", "description": "Check rewards balance and accrual."},
+    {"command": "lending", "name": "Lending Agent", "description": "Supply, borrow, repay, or withdraw assets."},
 ]
 
 # Agents endpoints expected by the frontend
@@ -111,6 +113,7 @@ def _map_agent_type(agent_name: str) -> str:
         "database_agent": "analysis",
         "search_agent": "realtime search",
         "swap_agent": "token swap",
+        "lending_agent": "lending",
         "supervisor": "supervisor",
     }
     return mapping.get(agent_name, "supervisor")
@@ -243,6 +246,13 @@ def chat(request: ChatRequest):
                 if swap_meta:
                     response_metadata.update(swap_meta)
                     swap_meta_snapshot = swap_meta
+            elif agent_name == "lending":
+                lending_meta = metadata.get_lending_agent(
+                    user_id=user_id,
+                    conversation_id=conversation_id,
+                )
+                if lending_meta:
+                    response_metadata.update(lending_meta)
             logger.debug(
                 "Response metadata for user=%s conversation=%s: %s",
                 user_id,
@@ -259,8 +269,8 @@ def chat(request: ChatRequest):
                 metadata=result.get("metadata", {}),
                 conversation_id=conversation_id,
                 user_id=user_id,
-                requires_action=True if agent_name == "token swap" else False,
-                action_type="swap" if agent_name == "token swap" else None
+                requires_action=True if agent_name in ["token swap", "lending"] else False,
+                action_type="swap" if agent_name == "token swap" else "lending" if agent_name == "lending" else None
             )
             
             # Add the response message to the conversation
@@ -296,6 +306,18 @@ def chat(request: ChatRequest):
                     should_clear = status == "ready" or event == "swap_intent_ready"
                 if should_clear:
                     metadata.set_swap_agent(
+                        {},
+                        user_id=user_id,
+                        conversation_id=conversation_id,
+                    )
+            if agent_name == "lending":
+                should_clear = False
+                if response_meta:
+                    status = response_meta.get("status") if isinstance(response_meta, dict) else None
+                    event = response_meta.get("event") if isinstance(response_meta, dict) else None
+                    should_clear = status == "ready" or event == "lending_intent_ready"
+                if should_clear:
+                    metadata.set_lending_agent(
                         {},
                         user_id=user_id,
                         conversation_id=conversation_id,

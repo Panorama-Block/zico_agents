@@ -19,6 +19,10 @@ from src.agents.swap.prompt import SWAP_AGENT_SYSTEM_PROMPT
 from src.agents.dca.agent import DcaAgent
 from src.agents.dca.tools import dca_session
 from src.agents.dca.prompt import DCA_AGENT_SYSTEM_PROMPT
+from src.agents.lending.agent import LendingAgent
+from src.agents.lending.tools import lending_session
+from src.agents.lending.prompt import LENDING_AGENT_SYSTEM_PROMPT
+from src.agents.lending.config import LendingConfig
 from src.agents.search.agent import SearchAgent
 from src.agents.database.client import is_database_available
 
@@ -75,6 +79,13 @@ class Supervisor:
             "- dca_agent: Plans DCA swap workflows, consulting strategy docs, validating parameters, and confirming automation metadata.\n"
         )
 
+        lendingAgent = LendingAgent(llm)
+        self.lending_agent = lendingAgent.agent
+        agents.append(self.lending_agent)
+        available_agents_text += (
+            "- lending_agent: Handles lending operations (supply, borrow, repay, withdraw) on DeFi protocols like Aave.\n"
+        )
+
         searchAgent = SearchAgent(llm)
         self.search_agent = searchAgent.agent
         agents.append(self.search_agent)
@@ -87,8 +98,8 @@ class Supervisor:
         agents.append(self.default_agent)
 
         # Track known agent names for response extraction
-        self.known_agent_names = {"crypto_agent", "database_agent", "swap_agent", "dca_agent", "search_agent", "default_agent"}
-        self.specialized_agents = {"crypto_agent", "database_agent", "swap_agent", "dca_agent", "search_agent"}
+        self.known_agent_names = {"crypto_agent", "database_agent", "swap_agent", "dca_agent", "lending_agent", "search_agent", "default_agent"}
+        self.specialized_agents = {"crypto_agent", "database_agent", "swap_agent", "dca_agent", "lending_agent", "search_agent"}
         self.failure_markers = (
             "cannot fulfill",
             "can't fulfill",
@@ -193,12 +204,21 @@ Examples of dca queries to delegate:
 - Suggest a weekly swap DCA strategy
 - I want to automate a monthly swap from token A to token B
 
+Examples of lending queries to delegate:
+- I want to supply USDC
+- I want to borrow ETH on Arbitrum
+- Help me with a lending operation
+- I want to make a supply of 100 USDC
+- Withdraw my WETH from the lending protocol
+
 When a swap conversation is already underway (the user is still providing swap
 details or the swap_agent requested follow-up information), keep routing those
 messages to the swap_agent until it has gathered every field and signals the
 swap intent is ready.
 
 When a DCA conversation is already underway (the user is reviewing strategy recommendations or adjusting schedule parameters), keep routing messages to the dca_agent until the workflow is confirmed or cancelled.
+
+When a lending conversation is already underway (the user is providing lending details like asset, amount, network), keep routing messages to the lending_agent until the lending intent is ready or cancelled.
 
 {database_examples}
 
@@ -221,6 +241,7 @@ Examples of general queries to handle directly:
         self.app = self.supervisor.compile()
 
         self._swap_network_terms, self._swap_token_terms = self._build_swap_detection_terms()
+        self._lending_network_terms, self._lending_asset_terms = self._build_lending_detection_terms()
 
     def _is_handoff_text(self, text: str) -> bool:
         if not text:
@@ -356,6 +377,25 @@ Examples of general queries to handle directly:
                 response = self.dca_agent.invoke({"messages": scoped_messages})
         except Exception as exc:
             print(f"Error invoking dca agent directly: {exc}")
+            return None
+
+        if not response:
+            return None
+
+        agent, text, messages_out = self._extract_response_from_graph(response)
+        return agent, text, messages_out
+
+    def _invoke_lending_agent(self, langchain_messages):
+        scoped_messages = [SystemMessage(content=LENDING_AGENT_SYSTEM_PROMPT)]
+        scoped_messages.extend(langchain_messages)
+        try:
+            with lending_session(
+                user_id=self._active_user_id,
+                conversation_id=self._active_conversation_id,
+            ):
+                response = self.lending_agent.invoke({"messages": scoped_messages})
+        except Exception as exc:
+            print(f"Error invoking lending agent directly: {exc}")
             return None
 
         if not response:
@@ -526,6 +566,22 @@ Examples of general queries to handle directly:
                 else:
                     dca_meta = dca_meta.copy()
             return dca_meta if dca_meta else {}
+        if agent_name == "lending_agent":
+            lending_meta = metadata.get_lending_agent(
+                user_id=self._active_user_id,
+                conversation_id=self._active_conversation_id,
+            )
+            if lending_meta:
+                history = metadata.get_lending_history(
+                    user_id=self._active_user_id,
+                    conversation_id=self._active_conversation_id,
+                )
+                if history:
+                    lending_meta = lending_meta.copy()
+                    lending_meta.setdefault("history", history)
+                else:
+                    lending_meta = lending_meta.copy()
+            return lending_meta if lending_meta else {}
         if agent_name == "crypto_agent":
             tool_meta = self._collect_tool_metadata(messages_out)
             if tool_meta:
@@ -577,6 +633,53 @@ Examples of general queries to handle directly:
             return True
         return False
 
+    def _build_lending_detection_terms(self) -> tuple[set[str], set[str]]:
+        networks: set[str] = set()
+        assets: set[str] = set()
+        try:
+            for net in LendingConfig.list_networks():
+                lowered = net.lower()
+                networks.add(lowered)
+                try:
+                    for asset in LendingConfig.list_assets(net):
+                        assets.add(asset.lower())
+                except ValueError:
+                    continue
+        except Exception:
+            return set(), set()
+        return networks, assets
+
+    def _is_lending_like_request(self, messages: List[ChatMessage]) -> bool:
+        for msg in reversed(messages):
+            if msg.get("role") != "user":
+                continue
+            content = (msg.get("content") or "").strip()
+            if not content:
+                continue
+            lowered = content.lower()
+            lending_keywords = (
+                "lend",
+                "lending",
+                "supply",
+                "borrow",
+                "repay",
+                "withdraw",
+                "deposit",
+                "aave",
+                "compound",
+            )
+            if not any(keyword in lowered for keyword in lending_keywords):
+                return False
+            if any(term and term in lowered for term in self._lending_network_terms):
+                return True
+            if any(term and term in lowered for term in self._lending_asset_terms):
+                return True
+            if any(ch.isdigit() for ch in lowered):
+                return True
+            # Default to True if the user explicitly mentioned lending-related keywords
+            return True
+        return False
+
     def invoke(
         self,
         messages: List[ChatMessage],
@@ -603,6 +706,22 @@ Examples of general queries to handle directly:
 
         dca_state = metadata.get_dca_agent(user_id=user_id, conversation_id=conversation_id)
         swap_state = metadata.get_swap_agent(user_id=user_id, conversation_id=conversation_id)
+        lending_state = metadata.get_lending_agent(user_id=user_id, conversation_id=conversation_id)
+
+        # Check for new lending request first
+        if not lending_state and self._is_lending_like_request(messages):
+            lending_result = self._invoke_lending_agent(langchain_messages)
+            if lending_result:
+                final_agent, cleaned_response, messages_out = lending_result
+                meta = self._build_metadata(final_agent, messages_out)
+                self._active_user_id = None
+                self._active_conversation_id = None
+                return {
+                    "messages": messages_out,
+                    "agent": final_agent,
+                    "response": cleaned_response or "Sorry, no meaningful response was returned.",
+                    "metadata": meta,
+                }
 
         if not swap_state and self._is_swap_like_request(messages):
             swap_result = self._invoke_swap_agent(langchain_messages)
@@ -701,11 +820,40 @@ Examples of general queries to handle directly:
                     "metadata": meta,
                 }
 
+        # Handle in-progress lending flow
+        if lending_state and lending_state.get("status") == "collecting":
+            lending_result = self._invoke_lending_agent(langchain_messages)
+            if lending_result:
+                final_agent, cleaned_response, messages_out = lending_result
+                meta = self._build_metadata(final_agent, messages_out)
+                self._active_user_id = None
+                self._active_conversation_id = None
+                return {
+                    "messages": messages_out,
+                    "agent": final_agent,
+                    "response": cleaned_response or "Sorry, no meaningful response was returned.",
+                    "metadata": meta,
+                }
+            # If direct lending invocation failed, fall through to supervisor graph with hints
+            next_field = lending_state.get("next_field")
+            pending_question = lending_state.get("pending_question")
+            guidance_parts = [
+                "There is an in-progress lending intent for this conversation.",
+                "Keep routing messages to the lending_agent until the intent is complete unless the user explicitly cancels or changes topic.",
+            ]
+            if next_field:
+                guidance_parts.append(f"The next field to collect is: {next_field}.")
+            if pending_question:
+                guidance_parts.append(f"Continue the lending flow by asking: {pending_question}")
+            guidance_text = " ".join(guidance_parts)
+            langchain_messages.insert(0, SystemMessage(content=guidance_text))
+
         try:
             with swap_session(user_id=user_id, conversation_id=conversation_id):
                 with dca_session(user_id=user_id, conversation_id=conversation_id):
-                    response = self.app.invoke({"messages": langchain_messages})
-                    print("DEBUG: response", response)
+                    with lending_session(user_id=user_id, conversation_id=conversation_id):
+                        response = self.app.invoke({"messages": langchain_messages})
+                        print("DEBUG: response", response)
         except Exception as e:
             print(f"Error in Supervisor: {e}")
             return {

@@ -8,7 +8,7 @@ class LendingConfig:
     SUPPORTED_NETWORKS = ["ethereum", "arbitrum", "optimism", "base", "polygon", "avalanche"]
     
     SUPPORTED_ASSETS = {
-        "ethereum": ["USDC", "USDT", "DAI", "WBTC", "WETH", "AAVE", "LINK"],
+        "ethereum": ["ETH", "USDC", "USDT", "DAI", "WBTC", "WETH", "AAVE", "LINK"],
         "arbitrum": ["USDC", "USDT", "DAI", "WBTC", "WETH", "ARB"],
         "optimism": ["USDC", "USDT", "DAI", "WBTC", "WETH", "OP"],
         "base": ["USDC", "WETH", "CBETH"],

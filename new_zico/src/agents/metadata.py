@@ -4,6 +4,7 @@ from typing import Any, Dict
 
 from src.agents.swap.storage import SwapStateRepository
 from src.agents.dca.storage import DcaStateRepository
+from src.agents.lending.storage import LendingStateRepository
 
 
 class Metadata:
@@ -11,6 +12,7 @@ class Metadata:
         self.crypto_data_agent: Dict[str, Any] = {}
         self._swap_repo = SwapStateRepository.instance()
         self._dca_repo = DcaStateRepository.instance()
+        self._lending_repo = LendingStateRepository.instance()
 
     def get_crypto_data_agent(self):
         return self.crypto_data_agent
@@ -84,6 +86,43 @@ class Metadata:
     ):
         try:
             return self._swap_repo.get_history(user_id, conversation_id, limit)
+        except ValueError:
+            return []
+
+    def get_lending_agent(self, user_id: str | None = None, conversation_id: str | None = None):
+        try:
+            return self._lending_repo.get_metadata(user_id, conversation_id)
+        except ValueError:
+            return {}
+
+    def set_lending_agent(
+        self,
+        lending_agent: Dict[str, Any] | None,
+        user_id: str | None = None,
+        conversation_id: str | None = None,
+    ):
+        try:
+            if lending_agent:
+                self._lending_repo.set_metadata(user_id, conversation_id, lending_agent)
+            else:
+                self._lending_repo.clear_metadata(user_id, conversation_id)
+        except ValueError:
+            return
+
+    def clear_lending_agent(self, user_id: str | None = None, conversation_id: str | None = None) -> None:
+        try:
+            self._lending_repo.clear_metadata(user_id, conversation_id)
+        except ValueError:
+            return
+
+    def get_lending_history(
+        self,
+        user_id: str | None = None,
+        conversation_id: str | None = None,
+        limit: int | None = None,
+    ):
+        try:
+            return self._lending_repo.get_history(user_id, conversation_id, limit)
         except ValueError:
             return []
 

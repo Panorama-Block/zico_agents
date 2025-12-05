@@ -114,6 +114,7 @@ def _map_agent_type(agent_name: str) -> str:
         "search_agent": "realtime search",
         "swap_agent": "token swap",
         "lending_agent": "lending",
+        "staking_agent": "staking",
         "supervisor": "supervisor",
     }
     return mapping.get(agent_name, "supervisor")
@@ -253,6 +254,13 @@ def chat(request: ChatRequest):
                 )
                 if lending_meta:
                     response_metadata.update(lending_meta)
+            elif agent_name == "staking":
+                staking_meta = metadata.get_staking_agent(
+                    user_id=user_id,
+                    conversation_id=conversation_id,
+                )
+                if staking_meta:
+                    response_metadata.update(staking_meta)
             logger.debug(
                 "Response metadata for user=%s conversation=%s: %s",
                 user_id,
@@ -269,8 +277,8 @@ def chat(request: ChatRequest):
                 metadata=result.get("metadata", {}),
                 conversation_id=conversation_id,
                 user_id=user_id,
-                requires_action=True if agent_name in ["token swap", "lending"] else False,
-                action_type="swap" if agent_name == "token swap" else "lending" if agent_name == "lending" else None
+                requires_action=True if agent_name in ["token swap", "lending", "staking"] else False,
+                action_type="swap" if agent_name == "token swap" else "lending" if agent_name == "lending" else "staking" if agent_name == "staking" else None
             )
             
             # Add the response message to the conversation
@@ -318,6 +326,18 @@ def chat(request: ChatRequest):
                     should_clear = status == "ready" or event == "lending_intent_ready"
                 if should_clear:
                     metadata.set_lending_agent(
+                        {},
+                        user_id=user_id,
+                        conversation_id=conversation_id,
+                    )
+            if agent_name == "staking":
+                should_clear = False
+                if response_meta:
+                    status = response_meta.get("status") if isinstance(response_meta, dict) else None
+                    event = response_meta.get("event") if isinstance(response_meta, dict) else None
+                    should_clear = status == "ready" or event == "staking_intent_ready"
+                if should_clear:
+                    metadata.set_staking_agent(
                         {},
                         user_id=user_id,
                         conversation_id=conversation_id,

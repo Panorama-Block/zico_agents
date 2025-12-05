@@ -23,6 +23,9 @@ from src.agents.lending.agent import LendingAgent
 from src.agents.lending.tools import lending_session
 from src.agents.lending.prompt import LENDING_AGENT_SYSTEM_PROMPT
 from src.agents.lending.config import LendingConfig
+from src.agents.staking.agent import StakingAgent
+from src.agents.staking.tools import staking_session
+from src.agents.staking.prompt import STAKING_AGENT_SYSTEM_PROMPT
 from src.agents.search.agent import SearchAgent
 from src.agents.database.client import is_database_available
 
@@ -86,6 +89,13 @@ class Supervisor:
             "- lending_agent: Handles lending operations (supply, borrow, repay, withdraw) on DeFi protocols like Aave.\n"
         )
 
+        stakingAgent = StakingAgent(llm)
+        self.staking_agent = stakingAgent.agent
+        agents.append(self.staking_agent)
+        available_agents_text += (
+            "- staking_agent: Handles staking operations (stake ETH, unstake stETH) via Lido on Ethereum.\n"
+        )
+
         searchAgent = SearchAgent(llm)
         self.search_agent = searchAgent.agent
         agents.append(self.search_agent)
@@ -98,8 +108,8 @@ class Supervisor:
         agents.append(self.default_agent)
 
         # Track known agent names for response extraction
-        self.known_agent_names = {"crypto_agent", "database_agent", "swap_agent", "dca_agent", "lending_agent", "search_agent", "default_agent"}
-        self.specialized_agents = {"crypto_agent", "database_agent", "swap_agent", "dca_agent", "lending_agent", "search_agent"}
+        self.known_agent_names = {"crypto_agent", "database_agent", "swap_agent", "dca_agent", "lending_agent", "staking_agent", "search_agent", "default_agent"}
+        self.specialized_agents = {"crypto_agent", "database_agent", "swap_agent", "dca_agent", "lending_agent", "staking_agent", "search_agent"}
         self.failure_markers = (
             "cannot fulfill",
             "can't fulfill",
@@ -211,6 +221,13 @@ Examples of lending queries to delegate:
 - I want to make a supply of 100 USDC
 - Withdraw my WETH from the lending protocol
 
+Examples of staking queries to delegate:
+- I want to stake ETH
+- I want to stake 2 ETH on Lido
+- Help me unstake my stETH
+- I want to earn staking rewards
+- Convert my ETH to stETH
+
 When a swap conversation is already underway (the user is still providing swap
 details or the swap_agent requested follow-up information), keep routing those
 messages to the swap_agent until it has gathered every field and signals the
@@ -219,6 +236,8 @@ swap intent is ready.
 When a DCA conversation is already underway (the user is reviewing strategy recommendations or adjusting schedule parameters), keep routing messages to the dca_agent until the workflow is confirmed or cancelled.
 
 When a lending conversation is already underway (the user is providing lending details like asset, amount, network), keep routing messages to the lending_agent until the lending intent is ready or cancelled.
+
+When a staking conversation is already underway (the user is providing staking details like action or amount), keep routing messages to the staking_agent until the staking intent is ready or cancelled.
 
 {database_examples}
 
@@ -396,6 +415,25 @@ Examples of general queries to handle directly:
                 response = self.lending_agent.invoke({"messages": scoped_messages})
         except Exception as exc:
             print(f"Error invoking lending agent directly: {exc}")
+            return None
+
+        if not response:
+            return None
+
+        agent, text, messages_out = self._extract_response_from_graph(response)
+        return agent, text, messages_out
+
+    def _invoke_staking_agent(self, langchain_messages):
+        scoped_messages = [SystemMessage(content=STAKING_AGENT_SYSTEM_PROMPT)]
+        scoped_messages.extend(langchain_messages)
+        try:
+            with staking_session(
+                user_id=self._active_user_id,
+                conversation_id=self._active_conversation_id,
+            ):
+                response = self.staking_agent.invoke({"messages": scoped_messages})
+        except Exception as exc:
+            print(f"Error invoking staking agent directly: {exc}")
             return None
 
         if not response:
@@ -582,6 +620,22 @@ Examples of general queries to handle directly:
                 else:
                     lending_meta = lending_meta.copy()
             return lending_meta if lending_meta else {}
+        if agent_name == "staking_agent":
+            staking_meta = metadata.get_staking_agent(
+                user_id=self._active_user_id,
+                conversation_id=self._active_conversation_id,
+            )
+            if staking_meta:
+                history = metadata.get_staking_history(
+                    user_id=self._active_user_id,
+                    conversation_id=self._active_conversation_id,
+                )
+                if history:
+                    staking_meta = staking_meta.copy()
+                    staking_meta.setdefault("history", history)
+                else:
+                    staking_meta = staking_meta.copy()
+            return staking_meta if staking_meta else {}
         if agent_name == "crypto_agent":
             tool_meta = self._collect_tool_metadata(messages_out)
             if tool_meta:
@@ -680,6 +734,31 @@ Examples of general queries to handle directly:
             return True
         return False
 
+    def _is_staking_like_request(self, messages: List[ChatMessage]) -> bool:
+        for msg in reversed(messages):
+            if msg.get("role") != "user":
+                continue
+            content = (msg.get("content") or "").strip()
+            if not content:
+                continue
+            lowered = content.lower()
+            staking_keywords = (
+                "stake",
+                "staking",
+                "unstake",
+                "unstaking",
+                "steth",
+                "lido",
+                "liquid staking",
+                "staking rewards",
+                "eth staking",
+            )
+            if not any(keyword in lowered for keyword in staking_keywords):
+                return False
+            # Default to True if the user explicitly mentioned staking-related keywords
+            return True
+        return False
+
     def invoke(
         self,
         messages: List[ChatMessage],
@@ -707,8 +786,24 @@ Examples of general queries to handle directly:
         dca_state = metadata.get_dca_agent(user_id=user_id, conversation_id=conversation_id)
         swap_state = metadata.get_swap_agent(user_id=user_id, conversation_id=conversation_id)
         lending_state = metadata.get_lending_agent(user_id=user_id, conversation_id=conversation_id)
+        staking_state = metadata.get_staking_agent(user_id=user_id, conversation_id=conversation_id)
 
-        # Check for new lending request first
+        # Check for new staking request first
+        if not staking_state and self._is_staking_like_request(messages):
+            staking_result = self._invoke_staking_agent(langchain_messages)
+            if staking_result:
+                final_agent, cleaned_response, messages_out = staking_result
+                meta = self._build_metadata(final_agent, messages_out)
+                self._active_user_id = None
+                self._active_conversation_id = None
+                return {
+                    "messages": messages_out,
+                    "agent": final_agent,
+                    "response": cleaned_response or "Sorry, no meaningful response was returned.",
+                    "metadata": meta,
+                }
+
+        # Check for new lending request
         if not lending_state and self._is_lending_like_request(messages):
             lending_result = self._invoke_lending_agent(langchain_messages)
             if lending_result:
@@ -848,12 +943,41 @@ Examples of general queries to handle directly:
             guidance_text = " ".join(guidance_parts)
             langchain_messages.insert(0, SystemMessage(content=guidance_text))
 
+        # Handle in-progress staking flow
+        if staking_state and staking_state.get("status") == "collecting":
+            staking_result = self._invoke_staking_agent(langchain_messages)
+            if staking_result:
+                final_agent, cleaned_response, messages_out = staking_result
+                meta = self._build_metadata(final_agent, messages_out)
+                self._active_user_id = None
+                self._active_conversation_id = None
+                return {
+                    "messages": messages_out,
+                    "agent": final_agent,
+                    "response": cleaned_response or "Sorry, no meaningful response was returned.",
+                    "metadata": meta,
+                }
+            # If direct staking invocation failed, fall through to supervisor graph with hints
+            next_field = staking_state.get("next_field")
+            pending_question = staking_state.get("pending_question")
+            guidance_parts = [
+                "There is an in-progress staking intent for this conversation.",
+                "Keep routing messages to the staking_agent until the intent is complete unless the user explicitly cancels or changes topic.",
+            ]
+            if next_field:
+                guidance_parts.append(f"The next field to collect is: {next_field}.")
+            if pending_question:
+                guidance_parts.append(f"Continue the staking flow by asking: {pending_question}")
+            guidance_text = " ".join(guidance_parts)
+            langchain_messages.insert(0, SystemMessage(content=guidance_text))
+
         try:
             with swap_session(user_id=user_id, conversation_id=conversation_id):
                 with dca_session(user_id=user_id, conversation_id=conversation_id):
                     with lending_session(user_id=user_id, conversation_id=conversation_id):
-                        response = self.app.invoke({"messages": langchain_messages})
-                        print("DEBUG: response", response)
+                        with staking_session(user_id=user_id, conversation_id=conversation_id):
+                            response = self.app.invoke({"messages": langchain_messages})
+                            print("DEBUG: response", response)
         except Exception as e:
             print(f"Error in Supervisor: {e}")
             return {

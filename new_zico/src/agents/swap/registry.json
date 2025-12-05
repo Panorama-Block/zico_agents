@@ -89,6 +89,17 @@
         {"symbol": "USDT", "aliases": ["usdt"], "decimals": 6, "min_amount": "1", "max_amount": "1000000"},
         {"symbol": "OP", "aliases": ["op"], "decimals": 18, "min_amount": "0.1", "max_amount": "1000000"}
       ]
+    },
+    {
+      "name": "world-chain",
+      "aliases": ["world-chain", "world chain", "worldchain", "wld"],
+      "tokens": [
+        {"symbol": "ETH", "aliases": ["eth"], "decimals": 18, "min_amount": "0.0001", "max_amount": "10000"},
+        {"symbol": "WETH", "aliases": ["weth"], "decimals": 18, "min_amount": "0.0001", "max_amount": "10000"},
+        {"symbol": "WLD", "aliases": ["wld", "worldcoin"], "decimals": 18, "min_amount": "0.1", "max_amount": "1000000"},
+        {"symbol": "USDC", "aliases": ["usdc"], "decimals": 6, "min_amount": "1", "max_amount": "1000000"},
+        {"symbol": "CONFRARIA", "aliases": ["confraria", "mcw", "milhas da confra"], "decimals": 18, "min_amount": "1", "max_amount": "1000000"}
+      ]
     }
   ]
 }

@@ -1,16 +1,15 @@
-import logging
-logging.basicConfig(
-    level=logging.DEBUG,
-    format="%(asctime)s %(levelname)s %(name)s: %(message)s",
-    handlers=[logging.StreamHandler()]
-)
-logging.info("Test log from app.py startup")
-from fastapi import FastAPI, HTTPException, Request
-from fastapi.middleware.cors import CORSMiddleware
-from pydantic import BaseModel
-from typing import List
-import re
+import base64
+import json
+import os
+from typing import List, Optional
 
+from fastapi import FastAPI, File, Form, HTTPException, Request, UploadFile
+from fastapi.middleware.cors import CORSMiddleware
+from langchain_core.messages import HumanMessage
+from pydantic import BaseModel
+
+from src.infrastructure.logging import setup_logging, get_logger
+from src.infrastructure.rate_limiter import setup_rate_limiter, limiter
 from src.agents.config import Config
 from src.agents.supervisor.agent import Supervisor
 from src.models.chatMessage import ChatMessage
@@ -19,8 +18,23 @@ from src.service.chat_manager import chat_manager_instance
 from src.agents.crypto_data.tools import get_coingecko_id, get_tradingview_symbol
 from src.agents.metadata import metadata
 
+# Setup structured logging
+log_level = os.getenv("LOG_LEVEL", "INFO")
+log_format = os.getenv("LOG_FORMAT", "color")
+setup_logging(level=log_level, format_type=log_format)
+logger = get_logger(__name__)
+
+logger.info("Starting Zico Agent API")
+
 # Initialize FastAPI app
-app = FastAPI(title="Zico Agent API", version="1.0")
+app = FastAPI(
+    title="Zico Agent API",
+    version="2.0",
+    description="Multi-agent AI assistant with streaming support",
+)
+
+# Setup rate limiting
+setup_rate_limiter(app)
 
 # Enable CORS for local/frontend dev
 app.add_middleware(
@@ -31,9 +45,8 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-# Instantiate Supervisor agent (singleton LLM)
-supervisor = Supervisor(Config.get_llm())
-logger = logging.getLogger(__name__)
+# Instantiate Supervisor agent (singleton LLM with cost tracking)
+supervisor = Supervisor(Config.get_llm(with_cost_tracking=True))
 
 class ChatRequest(BaseModel):
     message: ChatMessage
@@ -156,6 +169,54 @@ def _resolve_identity(request: ChatRequest) -> tuple[str, str]:
 def health_check():
     return {"status": "ok"}
 
+
+@app.get("/costs")
+def get_costs():
+    """Get current LLM cost summary."""
+    cost_tracker = Config.get_cost_tracker()
+    return cost_tracker.get_summary()
+
+
+@app.get("/costs/detailed")
+def get_detailed_costs():
+    """Get detailed LLM cost report."""
+    cost_tracker = Config.get_cost_tracker()
+    return cost_tracker.get_detailed_report()
+
+
+@app.get("/costs/conversation")
+def get_conversation_costs(request: Request):
+    """Get accumulated LLM costs for a specific conversation."""
+    params = request.query_params
+    conversation_id = params.get("conversation_id")
+    user_id = params.get("user_id")
+
+    if not conversation_id or not user_id:
+        raise HTTPException(
+            status_code=400,
+            detail="Both 'conversation_id' and 'user_id' query parameters are required.",
+        )
+
+    costs = chat_manager_instance.get_conversation_costs(
+        conversation_id=conversation_id,
+        user_id=user_id,
+    )
+    return {
+        "conversation_id": conversation_id,
+        "user_id": user_id,
+        "costs": costs,
+    }
+
+
+@app.get("/models")
+def get_available_models():
+    """List available LLM models."""
+    return {
+        "models": Config.list_available_models(),
+        "providers": Config.list_available_providers(),
+        "default": Config.DEFAULT_MODEL,
+    }
+
 @app.get("/chat/messages")
 def get_messages(request: Request):
     params = request.query_params
@@ -214,13 +275,27 @@ def chat(request: ChatRequest):
             conversation_id=conversation_id,
             user_id=user_id
         )
-        
+
+        # Take cost snapshot before invoking
+        cost_tracker = Config.get_cost_tracker()
+        cost_snapshot = cost_tracker.get_snapshot()
+
         # Invoke the supervisor agent with the conversation
         result = supervisor.invoke(
             conversation_messages,
             conversation_id=conversation_id,
             user_id=user_id,
         )
+
+        # Calculate and save cost delta for this request
+        cost_delta = cost_tracker.calculate_delta(cost_snapshot)
+        if cost_delta.get("cost", 0) > 0 or cost_delta.get("calls", 0) > 0:
+            chat_manager_instance.update_conversation_costs(
+                cost_delta,
+                conversation_id=conversation_id,
+                user_id=user_id,
+            )
+
         logger.debug(
             "Supervisor returned result for user=%s conversation=%s: %s",
             user_id,
@@ -352,6 +427,304 @@ def chat(request: ChatRequest):
             conversation_id,
         )
         raise HTTPException(status_code=500, detail=str(e))
+
+
+# Supported audio MIME types
+AUDIO_MIME_TYPES = {
+    ".mp3": "audio/mpeg",
+    ".wav": "audio/wav",
+    ".flac": "audio/flac",
+    ".ogg": "audio/ogg",
+    ".webm": "audio/webm",
+    ".m4a": "audio/mp4",
+    ".aac": "audio/aac",
+}
+
+# Max audio file size (20MB)
+MAX_AUDIO_SIZE = 20 * 1024 * 1024
+
+
+def _get_audio_mime_type(filename: str, content_type: str | None) -> str:
+    """Determine the MIME type for an audio file."""
+    # Try from filename extension first
+    if filename:
+        ext = os.path.splitext(filename.lower())[1]
+        if ext in AUDIO_MIME_TYPES:
+            return AUDIO_MIME_TYPES[ext]
+
+    # Fall back to content type from upload
+    if content_type and content_type.startswith("audio/"):
+        return content_type
+
+    # Default to mpeg
+    return "audio/mpeg"
+
+
+@app.post("/chat/audio")
+async def chat_audio(
+    audio: UploadFile = File(..., description="Audio file (mp3, wav, flac, ogg, webm, m4a)"),
+    user_id: str = Form(..., description="User ID"),
+    conversation_id: str = Form(..., description="Conversation ID"),
+    wallet_address: str = Form("default", description="Wallet address"),
+):
+    """
+    Process audio input through the agent pipeline.
+
+    The audio is first transcribed using Gemini, then the transcription
+    is passed to the supervisor agent for processing (just like text input).
+    """
+    request_user_id: str | None = user_id
+    request_conversation_id: str | None = conversation_id
+
+    try:
+        # Validate user_id
+        if not user_id or user_id.lower() == "anonymous":
+            wallet = (wallet_address or "").strip()
+            if wallet and wallet.lower() != "default":
+                request_user_id = f"wallet::{wallet.lower()}"
+            else:
+                raise HTTPException(
+                    status_code=400,
+                    detail="A stable 'user_id' or wallet_address is required.",
+                )
+
+        logger.debug(
+            "Received audio chat request user=%s conversation=%s filename=%s",
+            request_user_id,
+            request_conversation_id,
+            audio.filename,
+        )
+
+        # Validate file size
+        audio_content = await audio.read()
+        if len(audio_content) > MAX_AUDIO_SIZE:
+            raise HTTPException(
+                status_code=413,
+                detail=f"Audio file too large. Maximum size is {MAX_AUDIO_SIZE // (1024*1024)}MB.",
+            )
+
+        if len(audio_content) == 0:
+            raise HTTPException(
+                status_code=400,
+                detail="Audio file is empty.",
+            )
+
+        # Get MIME type
+        mime_type = _get_audio_mime_type(audio.filename or "", audio.content_type)
+        logger.debug("Audio MIME type: %s, size: %d bytes", mime_type, len(audio_content))
+
+        # Encode audio to base64
+        encoded_audio = base64.b64encode(audio_content).decode("utf-8")
+
+        # Ensure session exists
+        wallet = wallet_address.strip() if wallet_address else None
+        if wallet and wallet.lower() == "default":
+            wallet = None
+
+        chat_manager_instance.ensure_session(
+            request_user_id,
+            request_conversation_id,
+            wallet_address=wallet,
+        )
+
+        # Take cost snapshot before invoking
+        cost_tracker = Config.get_cost_tracker()
+        cost_snapshot = cost_tracker.get_snapshot()
+
+        # Step 1: Transcribe the audio using Gemini
+        transcription_message = HumanMessage(
+            content=[
+                {"type": "text", "text": "Transcribe exactly what is being said in this audio. Return ONLY the transcription, nothing else."},
+                {"type": "media", "data": encoded_audio, "mime_type": mime_type},
+            ]
+        )
+
+        llm = Config.get_llm(with_cost_tracking=True)
+        transcription_response = llm.invoke([transcription_message])
+
+        # Extract transcription text
+        transcribed_text = transcription_response.content
+        if isinstance(transcribed_text, list):
+            text_parts = []
+            for part in transcribed_text:
+                if isinstance(part, dict) and part.get("text"):
+                    text_parts.append(part["text"])
+                elif isinstance(part, str):
+                    text_parts.append(part)
+            transcribed_text = " ".join(text_parts).strip()
+
+        if not transcribed_text:
+            raise HTTPException(
+                status_code=400,
+                detail="Could not transcribe the audio. Please try again with a clearer recording.",
+            )
+
+        logger.info("Audio transcribed: %s", transcribed_text[:200])
+
+        # Step 2: Store the user message with the transcription
+        user_message = ChatMessage(
+            role="user",
+            content=transcribed_text,
+            metadata={
+                "source": "audio",
+                "audio_filename": audio.filename,
+                "audio_size": len(audio_content),
+                "audio_mime_type": mime_type,
+            },
+        )
+        chat_manager_instance.add_message(
+            message=user_message.dict(),
+            conversation_id=request_conversation_id,
+            user_id=request_user_id,
+        )
+
+        # Step 3: Get conversation history and invoke supervisor
+        conversation_messages = chat_manager_instance.get_messages(
+            conversation_id=request_conversation_id,
+            user_id=request_user_id,
+        )
+
+        result = supervisor.invoke(
+            conversation_messages,
+            conversation_id=request_conversation_id,
+            user_id=request_user_id,
+        )
+
+        # Calculate and save cost delta
+        cost_delta = cost_tracker.calculate_delta(cost_snapshot)
+        if cost_delta.get("cost", 0) > 0 or cost_delta.get("calls", 0) > 0:
+            chat_manager_instance.update_conversation_costs(
+                cost_delta,
+                conversation_id=request_conversation_id,
+                user_id=request_user_id,
+            )
+
+        logger.debug(
+            "Supervisor returned result for audio user=%s conversation=%s: %s",
+            request_user_id,
+            request_conversation_id,
+            result,
+        )
+
+        # Step 4: Process and store the agent response (same as /chat endpoint)
+        if result and isinstance(result, dict):
+            agent_name = result.get("agent", "supervisor")
+            agent_name = _map_agent_type(agent_name)
+
+            response_metadata = {"supervisor_result": result, "source": "audio"}
+            swap_meta_snapshot = None
+
+            if isinstance(result, dict) and result.get("metadata"):
+                response_metadata.update(result.get("metadata") or {})
+            elif agent_name == "token swap":
+                swap_meta = metadata.get_swap_agent(
+                    user_id=request_user_id,
+                    conversation_id=request_conversation_id,
+                )
+                if swap_meta:
+                    response_metadata.update(swap_meta)
+                    swap_meta_snapshot = swap_meta
+            elif agent_name == "lending":
+                lending_meta = metadata.get_lending_agent(
+                    user_id=request_user_id,
+                    conversation_id=request_conversation_id,
+                )
+                if lending_meta:
+                    response_metadata.update(lending_meta)
+            elif agent_name == "staking":
+                staking_meta = metadata.get_staking_agent(
+                    user_id=request_user_id,
+                    conversation_id=request_conversation_id,
+                )
+                if staking_meta:
+                    response_metadata.update(staking_meta)
+
+            response_message = ChatMessage(
+                role="assistant",
+                content=result.get("response", "No response available"),
+                agent_name=agent_name,
+                agent_type=_map_agent_type(agent_name),
+                metadata=result.get("metadata", {}),
+                conversation_id=request_conversation_id,
+                user_id=request_user_id,
+                requires_action=True if agent_name in ["token swap", "lending", "staking"] else False,
+                action_type="swap" if agent_name == "token swap" else "lending" if agent_name == "lending" else "staking" if agent_name == "staking" else None,
+            )
+
+            chat_manager_instance.add_message(
+                message=response_message.dict(),
+                conversation_id=request_conversation_id,
+                user_id=request_user_id,
+            )
+
+            # Build response payload
+            response_payload = {
+                "response": result.get("response", "No response available"),
+                "agentName": agent_name,
+                "transcription": transcribed_text,
+            }
+
+            response_meta = result.get("metadata") or {}
+            if agent_name == "token swap" and not response_meta:
+                if swap_meta_snapshot:
+                    response_meta = swap_meta_snapshot
+                else:
+                    swap_meta = metadata.get_swap_agent(
+                        user_id=request_user_id,
+                        conversation_id=request_conversation_id,
+                    )
+                    if swap_meta:
+                        response_meta = swap_meta
+
+            if response_meta:
+                response_payload["metadata"] = response_meta
+
+            # Clear metadata after ready events (same as /chat)
+            if agent_name == "token swap":
+                should_clear = False
+                if response_meta:
+                    status = response_meta.get("status") if isinstance(response_meta, dict) else None
+                    event = response_meta.get("event") if isinstance(response_meta, dict) else None
+                    should_clear = status == "ready" or event == "swap_intent_ready"
+                if should_clear:
+                    metadata.set_swap_agent({}, user_id=request_user_id, conversation_id=request_conversation_id)
+
+            if agent_name == "lending":
+                should_clear = False
+                if response_meta:
+                    status = response_meta.get("status") if isinstance(response_meta, dict) else None
+                    event = response_meta.get("event") if isinstance(response_meta, dict) else None
+                    should_clear = status == "ready" or event == "lending_intent_ready"
+                if should_clear:
+                    metadata.set_lending_agent({}, user_id=request_user_id, conversation_id=request_conversation_id)
+
+            if agent_name == "staking":
+                should_clear = False
+                if response_meta:
+                    status = response_meta.get("status") if isinstance(response_meta, dict) else None
+                    event = response_meta.get("event") if isinstance(response_meta, dict) else None
+                    should_clear = status == "ready" or event == "staking_intent_ready"
+                if should_clear:
+                    metadata.set_staking_agent({}, user_id=request_user_id, conversation_id=request_conversation_id)
+
+            return response_payload
+
+        return {
+            "response": "No response available",
+            "agentName": "supervisor",
+            "transcription": transcribed_text,
+        }
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.exception(
+            "Audio chat handler failed for user=%s conversation=%s",
+            request_user_id,
+            request_conversation_id,
+        )
+        raise HTTPException(status_code=500, detail=str(e))
+
 
 # Include chat manager router
 app.include_router(chat_manager_router)

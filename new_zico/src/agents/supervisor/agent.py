@@ -1,4 +1,3 @@
-from langchain_google_genai import ChatGoogleGenerativeAI, GoogleGenerativeAIEmbeddings
 from langgraph_supervisor import create_supervisor
 from langchain_core.messages import HumanMessage, SystemMessage, AIMessage
 from src.agents.config import Config
@@ -29,16 +28,8 @@ from src.agents.staking.prompt import STAKING_AGENT_SYSTEM_PROMPT
 from src.agents.search.agent import SearchAgent
 from src.agents.database.client import is_database_available
 
-llm = ChatGoogleGenerativeAI(
-    model=Config.GEMINI_MODEL,
-    temperature=0.7,
-    google_api_key=Config.GEMINI_API_KEY
-)
-
-embeddings = GoogleGenerativeAIEmbeddings(
-    model=Config.GEMINI_EMBEDDING_MODEL,
-    google_api_key=Config.GEMINI_API_KEY
-)
+# Embeddings singleton
+embeddings = Config.get_embeddings()
 
 
 class ChatMessage(TypedDict):
@@ -50,7 +41,7 @@ class Supervisor:
     def __init__(self, llm):
         self.llm = llm
 
-        cryptoDataAgentClass = CryptoDataAgent(llm)
+        cryptoDataAgentClass = CryptoDataAgent(self.llm)
         cryptoDataAgent = cryptoDataAgentClass.agent
 
         agents = [cryptoDataAgent]
@@ -60,7 +51,7 @@ class Supervisor:
 
         # Conditionally include database agent
         if is_database_available():
-            databaseAgent = DatabaseAgent(llm)
+            databaseAgent = DatabaseAgent(self.llm)
             agents.append(databaseAgent)
             available_agents_text += (
                 "- database_agent: Handles database queries and data analysis. Can search and analyze data from the database.\n"
@@ -68,42 +59,42 @@ class Supervisor:
         else:
             databaseAgent = None
 
-        swapAgent = SwapAgent(llm)
+        swapAgent = SwapAgent(self.llm)
         self.swap_agent = swapAgent.agent
         agents.append(self.swap_agent)
         available_agents_text += (
             "- swap_agent: Handles swap operations on the Avalanche network and any other swap question related.\n"
         )
 
-        dcaAgent = DcaAgent(llm)
+        dcaAgent = DcaAgent(self.llm)
         self.dca_agent = dcaAgent.agent
         agents.append(self.dca_agent)
         available_agents_text += (
             "- dca_agent: Plans DCA swap workflows, consulting strategy docs, validating parameters, and confirming automation metadata.\n"
         )
 
-        lendingAgent = LendingAgent(llm)
+        lendingAgent = LendingAgent(self.llm)
         self.lending_agent = lendingAgent.agent
         agents.append(self.lending_agent)
         available_agents_text += (
             "- lending_agent: Handles lending operations (supply, borrow, repay, withdraw) on DeFi protocols like Aave.\n"
         )
 
-        stakingAgent = StakingAgent(llm)
+        stakingAgent = StakingAgent(self.llm)
         self.staking_agent = stakingAgent.agent
         agents.append(self.staking_agent)
         available_agents_text += (
             "- staking_agent: Handles staking operations (stake ETH, unstake stETH) via Lido on Ethereum.\n"
         )
 
-        searchAgent = SearchAgent(llm)
+        searchAgent = SearchAgent(self.llm)
         self.search_agent = searchAgent.agent
         agents.append(self.search_agent)
         available_agents_text += (
             "- search_agent: Uses web search tools for current events and factual lookups.\n"
         )
 
-        defaultAgent = DefaultAgent(llm)
+        defaultAgent = DefaultAgent(self.llm)
         self.default_agent = defaultAgent.agent
         agents.append(self.default_agent)
 
@@ -252,7 +243,7 @@ Examples of general queries to handle directly:
 
         self.supervisor = create_supervisor(
             agents,
-            model=llm,
+            model=self.llm,
             prompt=system_prompt,
             output_mode="last_message"
         )

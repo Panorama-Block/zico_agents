@@ -168,6 +168,62 @@ class ChatManager:
             display_name=display_name,
         )
 
+    # ---- Cost tracking ----------------------------------------------------
+    def update_conversation_costs(
+        self,
+        cost_delta: Dict,
+        conversation_id: Optional[str] = None,
+        user_id: Optional[str] = None,
+    ) -> Dict:
+        """
+        Update the conversation with cost data from the latest request.
+
+        Args:
+            cost_delta: Cost delta dict with 'cost', 'tokens', 'calls' keys
+            conversation_id: Conversation ID
+            user_id: User ID
+
+        Returns:
+            Updated conversation data
+        """
+        conversation_id, user_id = self._resolve_ids(conversation_id, user_id)
+        try:
+            result = self._store.update_conversation_costs(user_id, conversation_id, cost_delta)
+            logger.info(
+                "Updated costs for user=%s conversation=%s: +$%.6f (%d calls)",
+                user_id,
+                conversation_id,
+                cost_delta.get("cost", 0),
+                cost_delta.get("calls", 0),
+            )
+            return result
+        except Exception as exc:
+            logger.warning(
+                "Failed to update costs for user=%s conversation=%s: %s",
+                user_id,
+                conversation_id,
+                exc,
+            )
+            return {}
+
+    def get_conversation_costs(
+        self,
+        conversation_id: Optional[str] = None,
+        user_id: Optional[str] = None,
+    ) -> Dict:
+        """
+        Get the accumulated costs for a conversation.
+
+        Args:
+            conversation_id: Conversation ID
+            user_id: User ID
+
+        Returns:
+            Cost data dict
+        """
+        conversation_id, user_id = self._resolve_ids(conversation_id, user_id)
+        return self._store.get_conversation_costs(user_id, conversation_id)
+
 
 # Singleton-style accessor for the FastAPI routes
 chat_manager_instance = ChatManager()

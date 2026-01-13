@@ -388,3 +388,99 @@ class PanoramaStore:
         )
         conversation = self.ensure_conversation(user_id, conversation_id)
         return user, conversation
+
+    # ---- cost tracking -----------------------------------------------------
+    def update_conversation_costs(
+        self,
+        user_id: str,
+        conversation_id: str,
+        cost_delta: Dict[str, Any],
+    ) -> Dict[str, Any]:
+        """
+        Update the conversation with accumulated cost data.
+
+        Args:
+            user_id: User ID
+            conversation_id: Conversation ID
+            cost_delta: Cost delta from this request (cost, tokens, calls)
+
+        Returns:
+            Updated conversation data
+        """
+        conv_key = _conversation_key(user_id, conversation_id)
+        try:
+            conversation = self._client.get("conversations", conv_key)
+        except PanoramaGatewayError as exc:
+            if exc.status_code == 404:
+                self._logger.warning("Conversation %s not found for cost update", conv_key)
+                return {}
+            raise
+
+        # Get existing cost data from contextState
+        context_state = conversation.get("contextState", {}) or {}
+        existing_costs = context_state.get("costs", {
+            "total_cost": 0.0,
+            "total_tokens": {"input": 0, "output": 0, "cache": 0},
+            "total_calls": 0,
+        })
+
+        # Accumulate costs
+        delta_tokens = cost_delta.get("tokens", {})
+        existing_tokens = existing_costs.get("total_tokens", {"input": 0, "output": 0, "cache": 0})
+
+        updated_costs = {
+            "total_cost": round(existing_costs.get("total_cost", 0.0) + cost_delta.get("cost", 0.0), 6),
+            "total_tokens": {
+                "input": existing_tokens.get("input", 0) + delta_tokens.get("input", 0),
+                "output": existing_tokens.get("output", 0) + delta_tokens.get("output", 0),
+                "cache": existing_tokens.get("cache", 0) + delta_tokens.get("cache", 0),
+            },
+            "total_calls": existing_costs.get("total_calls", 0) + cost_delta.get("calls", 0),
+            "last_updated": _utc_now_iso(),
+        }
+
+        # Update contextState with new costs
+        context_state["costs"] = updated_costs
+        try:
+            return self._client.update(
+                "conversations",
+                conv_key,
+                {"contextState": context_state, "updatedAt": _utc_now_iso()},
+            )
+        except PanoramaGatewayError as exc:
+            self._logger.error(
+                "Failed to update costs for conversation %s: status=%s",
+                conv_key,
+                exc.status_code,
+            )
+            raise
+
+    def get_conversation_costs(
+        self,
+        user_id: str,
+        conversation_id: str,
+    ) -> Dict[str, Any]:
+        """
+        Get the accumulated costs for a conversation.
+
+        Args:
+            user_id: User ID
+            conversation_id: Conversation ID
+
+        Returns:
+            Cost data or empty dict if not found
+        """
+        conv_key = _conversation_key(user_id, conversation_id)
+        try:
+            conversation = self._client.get("conversations", conv_key)
+        except PanoramaGatewayError as exc:
+            if exc.status_code == 404:
+                return {}
+            raise
+
+        context_state = conversation.get("contextState", {}) or {}
+        return context_state.get("costs", {
+            "total_cost": 0.0,
+            "total_tokens": {"input": 0, "output": 0, "cache": 0},
+            "total_calls": 0,
+        })

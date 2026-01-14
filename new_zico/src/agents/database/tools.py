@@ -1,6 +1,6 @@
 from langchain_core.messages.tool import ToolCall
 from langchain_core.messages import ToolMessage
-from langchain.tools import Tool, tool
+from langchain_core.tools import Tool, tool
 from src.agents.database.client import get_client
 import requests
 from src.agents.database.config import Config

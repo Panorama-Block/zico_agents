@@ -357,7 +357,7 @@ Examples of general queries to handle directly:
                 return art
         return {}
 
-    def _invoke_swap_agent(self, langchain_messages):
+    async def _invoke_swap_agent(self, langchain_messages):
         scoped_messages = [SystemMessage(content=SWAP_AGENT_SYSTEM_PROMPT)]
         scoped_messages.extend(langchain_messages)
         try:
@@ -365,7 +365,7 @@ Examples of general queries to handle directly:
                 user_id=self._active_user_id,
                 conversation_id=self._active_conversation_id,
             ):
-                response = self.swap_agent.invoke({"messages": scoped_messages})
+                response = await self.swap_agent.ainvoke({"messages": scoped_messages})
         except Exception as exc:
             print(f"Error invoking swap agent directly: {exc}")
             return None
@@ -376,7 +376,7 @@ Examples of general queries to handle directly:
         agent, text, messages_out = self._extract_response_from_graph(response)
         return agent, text, messages_out
 
-    def _invoke_dca_agent(self, langchain_messages):
+    async def _invoke_dca_agent(self, langchain_messages):
         scoped_messages = [SystemMessage(content=DCA_AGENT_SYSTEM_PROMPT)]
         scoped_messages.extend(langchain_messages)
         try:
@@ -384,7 +384,7 @@ Examples of general queries to handle directly:
                 user_id=self._active_user_id,
                 conversation_id=self._active_conversation_id,
             ):
-                response = self.dca_agent.invoke({"messages": scoped_messages})
+                response = await self.dca_agent.ainvoke({"messages": scoped_messages})
         except Exception as exc:
             print(f"Error invoking dca agent directly: {exc}")
             return None
@@ -395,7 +395,7 @@ Examples of general queries to handle directly:
         agent, text, messages_out = self._extract_response_from_graph(response)
         return agent, text, messages_out
 
-    def _invoke_lending_agent(self, langchain_messages):
+    async def _invoke_lending_agent(self, langchain_messages):
         scoped_messages = [SystemMessage(content=LENDING_AGENT_SYSTEM_PROMPT)]
         scoped_messages.extend(langchain_messages)
         try:
@@ -403,7 +403,7 @@ Examples of general queries to handle directly:
                 user_id=self._active_user_id,
                 conversation_id=self._active_conversation_id,
             ):
-                response = self.lending_agent.invoke({"messages": scoped_messages})
+                response = await self.lending_agent.ainvoke({"messages": scoped_messages})
         except Exception as exc:
             print(f"Error invoking lending agent directly: {exc}")
             return None
@@ -414,7 +414,7 @@ Examples of general queries to handle directly:
         agent, text, messages_out = self._extract_response_from_graph(response)
         return agent, text, messages_out
 
-    def _invoke_staking_agent(self, langchain_messages):
+    async def _invoke_staking_agent(self, langchain_messages):
         scoped_messages = [SystemMessage(content=STAKING_AGENT_SYSTEM_PROMPT)]
         scoped_messages.extend(langchain_messages)
         try:
@@ -422,7 +422,7 @@ Examples of general queries to handle directly:
                 user_id=self._active_user_id,
                 conversation_id=self._active_conversation_id,
             ):
-                response = self.staking_agent.invoke({"messages": scoped_messages})
+                response = await self.staking_agent.ainvoke({"messages": scoped_messages})
         except Exception as exc:
             print(f"Error invoking staking agent directly: {exc}")
             return None
@@ -495,11 +495,11 @@ Examples of general queries to handle directly:
             return True
         return False
 
-    def _run_default_agent(self, langchain_messages: List[Any]) -> Tuple[str | None, str | None, list]:
+    async def _run_default_agent(self, langchain_messages: List[Any]) -> Tuple[str | None, str | None, list]:
         if not getattr(self, "default_agent", None):
             return None, None, []
         try:
-            fallback_response = self.default_agent.invoke({"messages": langchain_messages})
+            fallback_response = await self.default_agent.ainvoke({"messages": langchain_messages})
             print("DEBUG: default agent fallback response", fallback_response)
         except Exception as exc:
             print(f"Error invoking default agent fallback: {exc}")
@@ -509,11 +509,11 @@ Examples of general queries to handle directly:
             fallback_agent = "default_agent"
         return fallback_agent, fallback_text, fallback_messages
 
-    def _run_search_agent(self, langchain_messages: List[Any]) -> Tuple[str | None, str | None, list]:
+    async def _run_search_agent(self, langchain_messages: List[Any]) -> Tuple[str | None, str | None, list]:
         if not getattr(self, "search_agent", None):
             return None, None, []
         try:
-            fallback_response = self.search_agent.invoke({"messages": langchain_messages})
+            fallback_response = await self.search_agent.ainvoke({"messages": langchain_messages})
             print("DEBUG: search agent fallback response", fallback_response)
         except Exception as exc:
             print(f"Error invoking search agent fallback: {exc}")
@@ -750,7 +750,7 @@ Examples of general queries to handle directly:
             return True
         return False
 
-    def invoke(
+    async def invoke(
         self,
         messages: List[ChatMessage],
         conversation_id: Optional[str] = None,
@@ -781,7 +781,7 @@ Examples of general queries to handle directly:
 
         # Check for new staking request first
         if not staking_state and self._is_staking_like_request(messages):
-            staking_result = self._invoke_staking_agent(langchain_messages)
+            staking_result = await self._invoke_staking_agent(langchain_messages)
             if staking_result:
                 final_agent, cleaned_response, messages_out = staking_result
                 meta = self._build_metadata(final_agent, messages_out)
@@ -796,7 +796,7 @@ Examples of general queries to handle directly:
 
         # Check for new lending request
         if not lending_state and self._is_lending_like_request(messages):
-            lending_result = self._invoke_lending_agent(langchain_messages)
+            lending_result = await self._invoke_lending_agent(langchain_messages)
             if lending_result:
                 final_agent, cleaned_response, messages_out = lending_result
                 meta = self._build_metadata(final_agent, messages_out)
@@ -810,7 +810,7 @@ Examples of general queries to handle directly:
                 }
 
         if not swap_state and self._is_swap_like_request(messages):
-            swap_result = self._invoke_swap_agent(langchain_messages)
+            swap_result = await self._invoke_swap_agent(langchain_messages)
             if swap_result:
                 final_agent, cleaned_response, messages_out = swap_result
                 meta = self._build_metadata(final_agent, messages_out)
@@ -826,7 +826,7 @@ Examples of general queries to handle directly:
         in_progress_statuses = {"consulting", "recommendation", "confirmation"}
 
         if dca_state and dca_state.get("status") in in_progress_statuses:
-            dca_result = self._invoke_dca_agent(langchain_messages)
+            dca_result = await self._invoke_dca_agent(langchain_messages)
             if dca_result:
                 final_agent, cleaned_response, messages_out = dca_result
                 meta = self._build_metadata(final_agent, messages_out)
@@ -853,7 +853,7 @@ Examples of general queries to handle directly:
                 guidance_parts.append(f"Continue the DCA flow by asking: {pending_question}")
             langchain_messages.insert(0, SystemMessage(content=" ".join(guidance_parts)))
         elif awaiting_dca:
-            dca_result = self._invoke_dca_agent(langchain_messages)
+            dca_result = await self._invoke_dca_agent(langchain_messages)
             if dca_result:
                 final_agent, cleaned_response, messages_out = dca_result
                 meta = self._build_metadata(final_agent, messages_out)
@@ -867,7 +867,7 @@ Examples of general queries to handle directly:
                 }
 
         if swap_state and swap_state.get("status") == "collecting":
-            swap_result = self._invoke_swap_agent(langchain_messages)
+            swap_result = await self._invoke_swap_agent(langchain_messages)
             if swap_result:
                 final_agent, cleaned_response, messages_out = swap_result
                 meta = self._build_metadata(final_agent, messages_out)
@@ -893,7 +893,7 @@ Examples of general queries to handle directly:
             guidance_text = " ".join(guidance_parts)
             langchain_messages.insert(0, SystemMessage(content=guidance_text))
         elif awaiting_swap:
-            swap_result = self._invoke_swap_agent(langchain_messages)
+            swap_result = await self._invoke_swap_agent(langchain_messages)
             if swap_result:
                 final_agent, cleaned_response, messages_out = swap_result
                 meta = self._build_metadata(final_agent, messages_out)
@@ -908,7 +908,7 @@ Examples of general queries to handle directly:
 
         # Handle in-progress lending flow
         if lending_state and lending_state.get("status") == "collecting":
-            lending_result = self._invoke_lending_agent(langchain_messages)
+            lending_result = await self._invoke_lending_agent(langchain_messages)
             if lending_result:
                 final_agent, cleaned_response, messages_out = lending_result
                 meta = self._build_metadata(final_agent, messages_out)
@@ -936,7 +936,7 @@ Examples of general queries to handle directly:
 
         # Handle in-progress staking flow
         if staking_state and staking_state.get("status") == "collecting":
-            staking_result = self._invoke_staking_agent(langchain_messages)
+            staking_result = await self._invoke_staking_agent(langchain_messages)
             if staking_result:
                 final_agent, cleaned_response, messages_out = staking_result
                 meta = self._build_metadata(final_agent, messages_out)
@@ -967,7 +967,7 @@ Examples of general queries to handle directly:
                 with dca_session(user_id=user_id, conversation_id=conversation_id):
                     with lending_session(user_id=user_id, conversation_id=conversation_id):
                         with staking_session(user_id=user_id, conversation_id=conversation_id):
-                            response = self.app.invoke({"messages": langchain_messages})
+                            response = await self.app.ainvoke({"messages": langchain_messages})
                             print("DEBUG: response", response)
         except Exception as e:
             print(f"Error in Supervisor: {e}")
@@ -986,7 +986,7 @@ Examples of general queries to handle directly:
             fallback_messages: list = []
 
             if final_agent != "search_agent":
-                search_agent, search_response, search_messages = self._run_search_agent(langchain_messages)
+                search_agent, search_response, search_messages = await self._run_search_agent(langchain_messages)
                 if search_response and not self._needs_supervisor_fallback(search_agent or "search_agent", search_response):
                     fallback_agent = search_agent or "search_agent"
                     fallback_response = search_response
@@ -997,7 +997,7 @@ Examples of general queries to handle directly:
                     fallback_messages = search_messages
 
             if not fallback_response or self._needs_supervisor_fallback(fallback_agent or "", fallback_response):
-                default_agent, default_response, default_messages = self._run_default_agent(langchain_messages)
+                default_agent, default_response, default_messages = await self._run_default_agent(langchain_messages)
                 if default_response:
                     fallback_agent = default_agent or "default_agent"
                     fallback_response = default_response

@@ -582,7 +582,7 @@ def update_dca_intent_tool(
         intent.advance_stage("confirmation")
 
     missing = intent.missing_fields()
-    if intent.stage == "confirmation" and not missing and intent.confirmed:
+    if (intent.stage == "confirmation" or intent.stage == "ready") and not missing and intent.confirmed:
         return _response(intent, ask=None, done=True)
 
     ask = _build_prompt_for_field(intent.next_field(), intent)

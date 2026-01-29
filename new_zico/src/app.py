@@ -1,12 +1,15 @@
 import base64
 import json
 import os
+import time
 from typing import List, Optional
+from uuid import uuid4
 
 from fastapi import FastAPI, File, Form, HTTPException, Request, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
 from langchain_core.messages import HumanMessage
 from pydantic import BaseModel
+from prometheus_client import make_asgi_app, Counter, Histogram, Gauge
 
 from src.infrastructure.logging import setup_logging, get_logger
 from src.infrastructure.rate_limiter import setup_rate_limiter, limiter
@@ -19,7 +22,7 @@ from src.agents.crypto_data.tools import get_coingecko_id, get_tradingview_symbo
 from src.agents.metadata import metadata
 
 # Setup structured logging
-log_level = os.getenv("LOG_LEVEL", "INFO")
+log_level = os.getenv("LOG_LEVEL", "DEBUG")
 log_format = os.getenv("LOG_FORMAT", "color")
 setup_logging(level=log_level, format_type=log_format)
 logger = get_logger(__name__)
@@ -44,6 +47,51 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+# Metrics
+REQUEST_COUNT = Counter(
+    "http_requests_total", "Total HTTP requests", ["method", "endpoint", "status"]
+)
+REQUEST_LATENCY = Histogram(
+    "http_request_duration_seconds", "HTTP request latency", ["method", "endpoint"]
+)
+ACTIVE_CONVERSATIONS = Gauge(
+    "active_conversations", "Number of active conversations"
+)
+
+# Add metrics endpoint
+metrics_app = make_asgi_app()
+app.mount("/metrics", metrics_app)
+
+@app.middleware("http")
+async def log_request_timing(request: Request, call_next):
+    request_id = request.headers.get("x-request-id") or str(uuid4())
+    start = time.perf_counter()
+    status_code = 500
+    method = request.method
+    path = request.url.path
+    
+    try:
+        response = await call_next(request)
+        status_code = response.status_code
+        response.headers["x-request-id"] = request_id
+        return response
+    finally:
+        duration = time.perf_counter() - start
+        duration_ms = duration * 1000
+        
+        # Update metrics
+        REQUEST_COUNT.labels(method=method, endpoint=path, status=status_code).inc()
+        REQUEST_LATENCY.labels(method=method, endpoint=path).observe(duration)
+        
+        logger.info(
+            "HTTP %s %s -> %s in %.1fms request_id=%s",
+            method,
+            path,
+            status_code,
+            duration_ms,
+            request_id,
+        )
 
 # Instantiate Supervisor agent (singleton LLM with cost tracking)
 supervisor = Supervisor(Config.get_llm(with_cost_tracking=True))
@@ -231,7 +279,7 @@ def get_conversations(request: Request):
     return {"conversation_ids": chat_manager_instance.get_all_conversation_ids(user_id)}
 
 @app.post("/chat")
-def chat(request: ChatRequest):
+async def chat(request: ChatRequest):
     user_id: str | None = None
     conversation_id: str | None = None
     try:
@@ -257,6 +305,9 @@ def chat(request: ChatRequest):
             wallet_address=wallet,
             display_name=display_name,
         )
+        
+        # Track active conversation
+        ACTIVE_CONVERSATIONS.inc()
 
         if request.message.role == "user":
             clean_content = _sanitize_user_message_content(request.message.content)
@@ -281,7 +332,7 @@ def chat(request: ChatRequest):
         cost_snapshot = cost_tracker.get_snapshot()
 
         # Invoke the supervisor agent with the conversation
-        result = supervisor.invoke(
+        result = await supervisor.invoke(
             conversation_messages,
             conversation_id=conversation_id,
             user_id=user_id,
@@ -526,6 +577,9 @@ async def chat_audio(
             request_conversation_id,
             wallet_address=wallet,
         )
+        
+        # Track active conversation
+        ACTIVE_CONVERSATIONS.inc()
 
         # Take cost snapshot before invoking
         cost_tracker = Config.get_cost_tracker()
@@ -584,7 +638,7 @@ async def chat_audio(
             user_id=request_user_id,
         )
 
-        result = supervisor.invoke(
+        result = await supervisor.invoke(
             conversation_messages,
             conversation_id=request_conversation_id,
             user_id=request_user_id,

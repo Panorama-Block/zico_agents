@@ -17,7 +17,7 @@ class Config:
     """Application configuration with multi-provider LLM support."""
 
     # Default model configuration
-    DEFAULT_MODEL = os.getenv("DEFAULT_LLM_MODEL", "gemini-3-pro-preview")
+    DEFAULT_MODEL = os.getenv("DEFAULT_LLM_MODEL", "gemini-3-flash-preview") # gemini-3-pro-preview
     DEFAULT_TEMPERATURE = float(os.getenv("DEFAULT_LLM_TEMPERATURE", "0.7"))
     DEFAULT_PROVIDER: Provider = "google"
 

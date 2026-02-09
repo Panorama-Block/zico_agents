@@ -176,7 +176,7 @@ class PanoramaStore:
         self._create_disclaimer_message(user_id, conversation_id)
         return conversation
 
-    def list_conversations(self, user_id: str) -> List[str]:
+    def list_conversations(self, user_id: str) -> List[Dict[str, Any]]:
         result = self._client.list(
             "conversations",
             {
@@ -185,7 +185,15 @@ class PanoramaStore:
             },
         )
         data = result.get("data", []) if isinstance(result, dict) else []
-        return [item.get("conversationId") for item in data if item.get("conversationId")]
+        return [
+            {
+                "id": item.get("conversationId"),
+                "title": item.get("title"),
+                "updated_at": item.get("updatedAt"),
+            }
+            for item in data
+            if item.get("conversationId")
+        ]
 
     def list_users(self, limit: int = 1000) -> List[str]:
         result = self._client.list(
@@ -251,7 +259,9 @@ class PanoramaStore:
             },
         )
         if isinstance(result, dict):
-            return result.get("data", [])
+            messages = result.get("data", [])
+            self._logger.info(f"Fetched {len(messages)} messages for conv {conversation_id}. Sample metadata: {messages[0].get('metadata') if messages else 'N/A'}")
+            return messages
         return []
 
     def add_message(
@@ -265,6 +275,11 @@ class PanoramaStore:
         message_id = message_dict.get("message_id") or message_dict.get("messageId")
         if not message_id:
             message_id = str(uuid.uuid4())
+        
+        # DEBUG: Log incoming metadata before persistence
+        input_metadata = message_dict.get("metadata") or {}
+        self._logger.info(f"Persisting message {message_id} with metadata keys: {list(input_metadata.keys())} Event: {input_metadata.get('event')}")
+        
         timestamp = _normalize_datetime(message_dict.get("timestamp")) or _utc_now_iso()
         message_payload = _drop_none(
             {
@@ -289,6 +304,23 @@ class PanoramaStore:
             }
         )
 
+        # Prepare updates
+        conversation_updates = {
+            "lastMessageId": message_payload["messageId"],
+            "messageCount": (conversation.get("messageCount") or 0) + 1,
+            "updatedAt": _utc_now_iso(),
+        }
+
+        # Auto-generate title for new conversations based on first user message
+        if (
+            message_payload["role"] == "user"
+            and (not conversation.get("title") or conversation.get("title") == "New Chat")
+        ):
+            # Simple truncation for title
+            content = message_payload.get("content", "")
+            generated_title = (content[:47] + "...") if len(content) > 50 else content
+            conversation_updates["title"] = generated_title
+
         operations = [
             {"op": "create", "entity": "messages", "args": {"data": message_payload}},
             {
@@ -296,11 +328,7 @@ class PanoramaStore:
                 "entity": "conversations",
                 "args": {
                     "id": conversation["id"],
-                    "data": {
-                        "lastMessageId": message_payload["messageId"],
-                        "messageCount": (conversation.get("messageCount") or 0) + 1,
-                        "updatedAt": _utc_now_iso(),
-                    },
+                    "data": conversation_updates,
                 },
             },
         ]

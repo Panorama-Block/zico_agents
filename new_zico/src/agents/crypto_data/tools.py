@@ -7,6 +7,7 @@ from sklearn.metrics.pairwise import cosine_similarity
 from src.agents.crypto_data.config import Config
 from langchain_core.tools import Tool
 from src.agents.metadata import metadata
+from src.agents.crypto_data.cache import cached
 
 # -----------------------------------------------------------------------------
 # Module: crypto_data tools
@@ -49,6 +50,7 @@ def get_most_similar(text: str, data: list[str]) -> list[str]:
     return top_matches
 
 
+@cached("coingecko_id")
 def get_coingecko_id(text: str, type: str = "coin") -> str | None:
     """
     Look up the CoinGecko internal ID for a coin or NFT by name.
@@ -82,6 +84,7 @@ def get_coingecko_id(text: str, type: str = "coin") -> str | None:
         raise
 
 
+@cached("tradingview")
 def get_tradingview_symbol(coingecko_id: str) -> str | None:
     """
     Convert a CoinGecko coin ID into a TradingView ticker symbol.
@@ -103,6 +106,7 @@ def get_tradingview_symbol(coingecko_id: str) -> str | None:
         raise
 
 
+@cached("price")
 def get_price(coin: str) -> float | None:
     """
     Fetch the current USD price of a cryptocurrency.
@@ -128,6 +132,7 @@ def get_price(coin: str) -> float | None:
         raise
 
 
+@cached("floor_price")
 def get_floor_price(nft: str) -> float | None:
     """
     Retrieve the floor price in USD for an NFT collection.
@@ -152,6 +157,7 @@ def get_floor_price(nft: str) -> float | None:
         raise
 
 
+@cached("fdv")
 def get_fdv(coin: str) -> float | None:
     """
     Get a coin's Fully Diluted Valuation (FDV) in USD from CoinGecko.
@@ -175,6 +181,7 @@ def get_fdv(coin: str) -> float | None:
         raise
 
 
+@cached("market_cap")
 def get_market_cap(coin: str) -> float | None:
     """
     Fetch current market capitalization for a coin via CoinGecko.
@@ -200,6 +207,7 @@ def get_market_cap(coin: str) -> float | None:
         raise
 
 
+@cached("protocols")
 def get_protocols_list() -> tuple[list[str], list[str], list[str]]:
     """
     Pull the full list of DeFi protocols from DefiLlama.
@@ -221,6 +229,7 @@ def get_protocols_list() -> tuple[list[str], list[str], list[str]]:
         raise
 
 
+@cached("tvl")
 def get_tvl_value(protocol_id: str) -> float:
     """
     Query DefiLlama for a single protocol's TVL.

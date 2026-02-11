@@ -6,6 +6,7 @@ from langchain_core.language_models import BaseChatModel
 from langchain_google_genai import GoogleGenerativeAIEmbeddings
 
 from src.llm import LLMFactory, CostTrackingCallback
+from src.llm.tiers import ModelTier, model_for_agent
 
 load_dotenv()
 
@@ -16,13 +17,13 @@ Provider = Literal["google", "openai", "anthropic"]
 class Config:
     """Application configuration with multi-provider LLM support."""
 
-    # Default model configuration
-    DEFAULT_MODEL = os.getenv("DEFAULT_LLM_MODEL", "gemini-3-pro-preview")
+    # Default model configuration — gemini-2.5-flash everywhere
+    DEFAULT_MODEL = os.getenv("DEFAULT_LLM_MODEL", "gemini-2.5-flash")
     DEFAULT_TEMPERATURE = float(os.getenv("DEFAULT_LLM_TEMPERATURE", "0.7"))
     DEFAULT_PROVIDER: Provider = "google"
 
     # Embedding configuration
-    EMBEDDING_MODEL = os.getenv("EMBEDDING_MODEL", "models/embedding-001")
+    EMBEDDING_MODEL = os.getenv("EMBEDDING_MODEL", "models/gemini-embedding-001")
 
     # Application configuration
     MAX_UPLOAD_LENGTH = 16 * 1024 * 1024
@@ -67,6 +68,7 @@ class Config:
 
     # Instance caches
     _llm_instance: BaseChatModel | None = None
+    _llm_fast_instance: BaseChatModel | None = None
     _embeddings_instance: GoogleGenerativeAIEmbeddings | None = None
     _cost_tracker: CostTrackingCallback | None = None
 
@@ -77,27 +79,14 @@ class Config:
         temperature: float | None = None,
         with_cost_tracking: bool = True,
     ) -> BaseChatModel:
-        """
-        Get or create LLM instance using the factory.
-
-        Args:
-            model: Model name (defaults to DEFAULT_MODEL)
-            temperature: Sampling temperature (defaults to DEFAULT_TEMPERATURE)
-            with_cost_tracking: Whether to attach cost tracking callback
-
-        Returns:
-            BaseChatModel instance
-        """
         model = model or cls.DEFAULT_MODEL
         temperature = temperature if temperature is not None else cls.DEFAULT_TEMPERATURE
 
-        # Use cache for default config
         use_cache = model == cls.DEFAULT_MODEL and temperature == cls.DEFAULT_TEMPERATURE
 
         if use_cache and cls._llm_instance is not None:
             return cls._llm_instance
 
-        # Build callbacks
         callbacks = []
         if with_cost_tracking:
             callbacks.append(cls.get_cost_tracker())
@@ -106,13 +95,44 @@ class Config:
             model=model,
             temperature=temperature,
             callbacks=callbacks if callbacks else None,
-            use_cache=False,  # We handle caching ourselves
+            use_cache=False,
         )
 
         if use_cache:
             cls._llm_instance = llm
 
         return llm
+
+    @classmethod
+    def get_fast_llm(cls, with_cost_tracking: bool = True) -> BaseChatModel:
+        """Return a cached FAST-tier LLM (gemini-2.5-flash)."""
+        if cls._llm_fast_instance is not None:
+            return cls._llm_fast_instance
+
+        callbacks = []
+        if with_cost_tracking:
+            callbacks.append(cls.get_cost_tracker())
+
+        llm = LLMFactory.create(
+            model=ModelTier.FAST,
+            temperature=cls.DEFAULT_TEMPERATURE,
+            callbacks=callbacks if callbacks else None,
+            use_cache=False,
+        )
+        cls._llm_fast_instance = llm
+        return llm
+
+    @classmethod
+    def get_llm_for_agent(
+        cls,
+        agent_name: str,
+        with_cost_tracking: bool = True,
+    ) -> BaseChatModel:
+        """Return the optimal LLM for *agent_name* based on its tier."""
+        model = model_for_agent(agent_name)
+        if model == ModelTier.FAST:
+            return cls.get_fast_llm(with_cost_tracking=with_cost_tracking)
+        return cls.get_llm(model=model, with_cost_tracking=with_cost_tracking)
 
     @classmethod
     def get_embeddings(cls) -> GoogleGenerativeAIEmbeddings:
@@ -133,7 +153,6 @@ class Config:
 
     @classmethod
     def get_agent_config(cls, agent_name: str) -> dict | None:
-        """Get configuration for a specific agent."""
         for agent in cls.AGENTS_CONFIG["agents"]:
             if agent["name"] == agent_name:
                 return agent
@@ -141,7 +160,6 @@ class Config:
 
     @classmethod
     def get_enabled_agents(cls) -> list[dict]:
-        """Get list of enabled agents."""
         return [
             agent
             for agent in cls.AGENTS_CONFIG["agents"]
@@ -150,17 +168,14 @@ class Config:
 
     @classmethod
     def list_available_models(cls) -> list[str]:
-        """List all available LLM models."""
         return LLMFactory.list_models()
 
     @classmethod
     def list_available_providers(cls) -> list[str]:
-        """List all available LLM providers."""
         return LLMFactory.list_providers()
 
     @classmethod
     def validate_config(cls) -> bool:
-        """Validate configuration by testing connections."""
         try:
             llm = cls.get_llm(with_cost_tracking=False)
             embeddings = cls.get_embeddings()
@@ -171,8 +186,8 @@ class Config:
 
     @classmethod
     def reset_instances(cls) -> None:
-        """Reset all cached instances."""
         cls._llm_instance = None
+        cls._llm_fast_instance = None
         cls._embeddings_instance = None
         if cls._cost_tracker:
             cls._cost_tracker.reset()

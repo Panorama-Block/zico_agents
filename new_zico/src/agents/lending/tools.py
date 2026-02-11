@@ -141,6 +141,40 @@ def _validate_action(action: Optional[str]) -> Optional[str]:
     return LendingConfig.validate_action(action)
 
 
+def _validate_amount(amount: Optional[Decimal], intent) -> Optional[Decimal]:
+    """Validate lending amount against per-asset min/max policies."""
+    if amount is None:
+        return None
+    if not intent.network or not intent.asset:
+        raise ValueError("Provide the network and asset before specifying an amount.")
+
+    policy = LendingConfig.get_asset_policy(intent.network, intent.asset)
+    min_amount = _to_decimal(policy.get("min_amount"))
+    max_amount = _to_decimal(policy.get("max_amount"))
+
+    if min_amount is not None and amount < min_amount:
+        raise ValueError(
+            f"The minimum amount for {intent.asset} on {intent.network} is {min_amount}."
+        )
+    if max_amount is not None and amount > max_amount:
+        raise ValueError(
+            f"The maximum amount for {intent.asset} on {intent.network} is {max_amount}."
+        )
+
+    decimals_value = policy.get("decimals", 18)
+    try:
+        decimals = int(decimals_value)
+    except (TypeError, ValueError):
+        decimals = 18
+
+    if decimals >= 0 and amount.as_tuple().exponent < -decimals:
+        raise ValueError(
+            f"Amount precision exceeds {decimals} decimal places allowed for {intent.asset}."
+        )
+
+    return amount
+
+
 # ---------- Output helpers ----------
 def _store_lending_metadata(
     intent: LendingIntent,
@@ -323,7 +357,7 @@ def update_lending_intent_tool(
             )
 
         if amount is not None:
-            intent.amount = amount # Basic validation done in pydantic
+            intent.amount = _validate_amount(amount, intent)
 
         if intent.amount is None:
             return _response(intent, f"How much {intent.asset}?")

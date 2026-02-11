@@ -1,6 +1,6 @@
 from langchain_core.messages.tool import ToolCall
 from langchain_core.messages import ToolMessage
-from langchain.tools import Tool, tool
+from langchain_core.tools import tool, BaseTool
 from src.agents.database.client import get_client
 import requests
 from src.agents.database.config import Config
@@ -162,7 +162,7 @@ def get_total_active_addresses(reasoning: str, ) -> str:
     print("response: ", response.json())
     return str(response.json())
 
-def get_tools() -> list[Tool]:
+def get_tools() -> list[BaseTool]:
     """
     Build and return the list of LangChain Tools for use in an agent.
 

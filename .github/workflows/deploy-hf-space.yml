@@ -1,0 +1,55 @@
+name: Deploy to Hugging Face Space
+
+on:
+  push:
+    branches:
+      - main
+  workflow_dispatch:
+
+concurrency:
+  group: deploy-hf-space
+  cancel-in-progress: true
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout source repository
+        uses: actions/checkout@v4
+
+      - name: Configure git identity
+        run: |
+          git config --global user.name "github-actions[bot]"
+          git config --global user.email "github-actions[bot]@users.noreply.github.com"
+
+      - name: Clone Hugging Face Space
+        env:
+          HF_TOKEN: ${{ secrets.HF_TOKEN }}
+        run: |
+          if [ -z "$HF_TOKEN" ]; then
+            echo "Missing required secret: HF_TOKEN"
+            exit 1
+          fi
+
+          git clone "https://oauth2:${HF_TOKEN}@huggingface.co/spaces/ColettoGS/zico-agent" hf-space
+
+      - name: Sync tracked files from new_zico
+        run: |
+          git ls-files -z new_zico | tar --null -T - -cf /tmp/new_zico.tar
+
+          find hf-space -mindepth 1 -maxdepth 1 ! -name '.git' -exec rm -rf {} +
+
+          tar -xf /tmp/new_zico.tar -C hf-space --strip-components=1
+
+      - name: Commit and push if changed
+        run: |
+          cd hf-space
+          git add -A
+
+          if git diff --cached --quiet; then
+            echo "No deployment changes detected"
+            exit 0
+          fi
+
+          git commit -m "Deploy from GitHub Actions: ${GITHUB_SHA}"
+          git push origin main

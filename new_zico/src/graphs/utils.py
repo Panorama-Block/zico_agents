@@ -116,8 +116,11 @@ def sanitize_handoff_phrases(text: str) -> str:
         sanitized = pattern.sub(" ", sanitized)
     for pat in _FORWARD_PATTERNS:
         sanitized = pat.sub(" ", sanitized)
-    sanitized = re.sub(r"\s+", " ", sanitized).strip()
-    return sanitized
+    # Collapse horizontal whitespace (spaces/tabs) without destroying newlines
+    sanitized = re.sub(r"[^\S\n]+", " ", sanitized)
+    # Collapse 3+ consecutive newlines into 2 (preserve paragraph breaks)
+    sanitized = re.sub(r"\n{3,}", "\n\n", sanitized)
+    return sanitized.strip()
 
 
 # ---------------------------------------------------------------------------
@@ -141,7 +144,7 @@ def get_text_content(message: Any) -> Optional[str]:
                 if isinstance(text_attr, str) and text_attr.strip():
                     collected.append(text_attr.strip())
         if collected:
-            return " ".join(collected)
+            return "\n\n".join(collected)
     return None
 
 

@@ -148,7 +148,8 @@ class ChatManager:
     # ---- Discovery helpers ------------------------------------------------
     def get_all_conversation_ids(self, user_id: Optional[str] = None) -> List[str]:
         user_id = (user_id or "anonymous")
-        return self._store.list_conversations(user_id)
+        conversations = self._store.list_conversations(user_id)
+        return [c["id"] for c in conversations if isinstance(c, dict) and c.get("id")]
 
     def get_all_user_ids(self) -> List[str]:
         return self._store.list_users()

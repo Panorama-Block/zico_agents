@@ -1,7 +1,8 @@
+import asyncio
 import base64
 import json
 import os
-from typing import List, Optional
+from typing import Any, Dict, List, Optional
 
 from fastapi import FastAPI, File, Form, HTTPException, Request, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
@@ -57,6 +58,7 @@ class ChatRequest(BaseModel):
     wallet_address: str = "default"
     conversation_id: str = "default"
     user_id: str = "anonymous"
+    metadata: Dict[str, Any] | None = None
 
 
 # Lightweight in-memory agent config for frontend integrations
@@ -170,13 +172,27 @@ def _resolve_identity(request: ChatRequest) -> tuple[str, str]:
     return user_id, conversation_id
 
 
-def _invoke_graph(conversation_messages, user_id, conversation_id):
-    """Invoke the StateGraph and return the result state."""
-    return graph.invoke({
+def _invoke_graph(
+    conversation_messages,
+    user_id,
+    conversation_id,
+    *,
+    pre_classified: Dict[str, Any] | None = None,
+):
+    """Invoke the StateGraph and return the result state.
+
+    If *pre_classified* is provided (e.g. from audio transcription) its
+    fields are merged into the initial state so the semantic router can
+    skip the embedding call.
+    """
+    initial_state: Dict[str, Any] = {
         "messages": conversation_messages,
         "user_id": user_id,
         "conversation_id": conversation_id,
-    })
+    }
+    if pre_classified:
+        initial_state.update(pre_classified)
+    return graph.invoke(initial_state)
 
 
 def _build_response_payload(result, user_id, conversation_id, extra_fields=None):
@@ -448,6 +464,71 @@ def _get_audio_mime_type(filename: str, content_type: str | None) -> str:
     return "audio/mpeg"
 
 
+# ---------------------------------------------------------------------------
+# Audio: combined transcription + intent classification prompt
+# ---------------------------------------------------------------------------
+
+_AUDIO_TRANSCRIBE_AND_CLASSIFY_PROMPT = """\
+You will receive an audio clip. Perform TWO tasks:
+
+1. **Transcribe** exactly what is being said.
+2. **Classify** the user's intent into one of these categories:
+   swap, lending, staking, dca, market_data, search, education, general
+
+Return ONLY a JSON object (no markdown fences) with these fields:
+{"transcription": "<exact transcription>", "intent": "<category>", "confidence": <0.0-1.0>}
+"""
+
+# Maps audio classification intents to agent runtime names
+_AUDIO_INTENT_AGENT_MAP: Dict[str, str] = {
+    "swap": "swap_agent",
+    "lending": "lending_agent",
+    "staking": "staking_agent",
+    "dca": "dca_agent",
+    "market_data": "crypto_agent",
+    "search": "search_agent",
+    "education": "default_agent",
+    "general": "default_agent",
+}
+
+
+def _parse_audio_classification(raw_content: str) -> tuple[str, str | None, float]:
+    """Parse the combined transcription + classification JSON response.
+
+    Returns ``(transcription, intent, confidence)``.  Falls back gracefully
+    if the model doesn't return valid JSON — treats the entire response as
+    plain transcription.
+    """
+    text = raw_content.strip()
+
+    # Strip markdown code fences if present
+    if text.startswith("```"):
+        text = text.split("\n", 1)[-1]
+    if text.endswith("```"):
+        text = text.rsplit("```", 1)[0]
+    text = text.strip()
+
+    try:
+        data = json.loads(text)
+        transcription = (data.get("transcription") or "").strip()
+        intent = (data.get("intent") or "").strip().lower()
+        confidence = float(data.get("confidence", 0.0))
+
+        if not transcription:
+            # JSON parsed but no transcription field — use raw
+            return raw_content.strip(), None, 0.0
+
+        valid_intents = set(_AUDIO_INTENT_AGENT_MAP.keys())
+        if intent not in valid_intents:
+            intent = None
+            confidence = 0.0
+
+        return transcription, intent, confidence
+    except (json.JSONDecodeError, ValueError, TypeError):
+        # Not JSON — treat entire response as transcription
+        return raw_content.strip(), None, 0.0
+
+
 @app.post("/chat/audio")
 async def chat_audio(
     audio: UploadFile = File(..., description="Audio file (mp3, wav, flac, ogg, webm, m4a)"),
@@ -455,7 +536,15 @@ async def chat_audio(
     conversation_id: str = Form(..., description="Conversation ID"),
     wallet_address: str = Form("default", description="Wallet address"),
 ):
-    """Process audio input through the agent pipeline."""
+    """Process audio input through the agent pipeline.
+
+    Optimisations over the naive sequential approach:
+    1. Combined transcription + intent classification in a single LLM call
+    2. Session setup + history fetch run in parallel with transcription
+    3. All blocking calls run in a thread pool (asyncio.to_thread)
+    4. Pre-classified intent is injected into graph state so semantic_router
+       can skip the embedding call (~200 ms saved)
+    """
     request_user_id: str | None = user_id
     request_conversation_id: str | None = conversation_id
 
@@ -494,42 +583,63 @@ async def chat_audio(
 
         encoded_audio = base64.b64encode(audio_content).decode("utf-8")
 
-        # Ensure session exists
         wallet = wallet_address.strip() if wallet_address else None
         if wallet and wallet.lower() == "default":
             wallet = None
-
-        chat_manager_instance.ensure_session(
-            request_user_id,
-            request_conversation_id,
-            wallet_address=wallet,
-        )
 
         # Take cost snapshot
         cost_tracker = Config.get_cost_tracker()
         cost_snapshot = cost_tracker.get_snapshot()
 
-        # Transcribe audio using Gemini
+        # ── Parallel phase: transcription + session/history ──────────────
+        # These are independent — run concurrently.
+
+        from src.llm.tiers import ModelTier
+        llm = Config.get_llm(model=ModelTier.TRANSCRIPTION, with_cost_tracking=True)
+
         transcription_message = HumanMessage(
             content=[
-                {"type": "text", "text": "Transcribe exactly what is being said in this audio. Return ONLY the transcription, nothing else."},
+                {"type": "text", "text": _AUDIO_TRANSCRIBE_AND_CLASSIFY_PROMPT},
                 {"type": "media", "data": encoded_audio, "mime_type": mime_type},
             ]
         )
 
-        from src.llm.tiers import ModelTier
-        llm = Config.get_llm(model=ModelTier.TRANSCRIPTION, with_cost_tracking=True)
-        transcription_response = llm.invoke([transcription_message])
+        async def _transcribe():
+            return await asyncio.to_thread(llm.invoke, [transcription_message])
 
-        transcribed_text = transcription_response.content
-        if isinstance(transcribed_text, list):
+        async def _setup_session_and_history():
+            await asyncio.to_thread(
+                chat_manager_instance.ensure_session,
+                request_user_id,
+                request_conversation_id,
+                wallet_address=wallet,
+            )
+            return await asyncio.to_thread(
+                chat_manager_instance.get_messages,
+                request_conversation_id,
+                request_user_id,
+            )
+
+        transcription_response, conversation_messages = await asyncio.gather(
+            _transcribe(),
+            _setup_session_and_history(),
+        )
+
+        # ── Parse combined transcription + classification ────────────────
+
+        raw_content = transcription_response.content
+        if isinstance(raw_content, list):
             text_parts = []
-            for part in transcribed_text:
+            for part in raw_content:
                 if isinstance(part, dict) and part.get("text"):
                     text_parts.append(part["text"])
                 elif isinstance(part, str):
                     text_parts.append(part)
-            transcribed_text = " ".join(text_parts).strip()
+            raw_content = " ".join(text_parts).strip()
+
+        transcribed_text, audio_intent, audio_confidence = _parse_audio_classification(
+            raw_content or "",
+        )
 
         if not transcribed_text:
             raise HTTPException(
@@ -537,9 +647,15 @@ async def chat_audio(
                 detail="Could not transcribe the audio. Please try again with a clearer recording.",
             )
 
-        logger.info("Audio transcribed: %s", transcribed_text[:200])
+        logger.info(
+            "Audio transcribed: '%s' | intent=%s confidence=%.2f",
+            transcribed_text[:200],
+            audio_intent,
+            audio_confidence,
+        )
 
-        # Store user message
+        # ── Store user message ───────────────────────────────────────────
+
         user_message = ChatMessage(
             role="user",
             content=transcribed_text,
@@ -550,21 +666,40 @@ async def chat_audio(
                 "audio_mime_type": mime_type,
             },
         )
-        chat_manager_instance.add_message(
-            message=user_message.dict(),
-            conversation_id=request_conversation_id,
-            user_id=request_user_id,
+        await asyncio.to_thread(
+            chat_manager_instance.add_message,
+            user_message.dict(),
+            request_conversation_id,
+            request_user_id,
         )
 
-        # Get conversation history and invoke graph
-        conversation_messages = chat_manager_instance.get_messages(
-            conversation_id=request_conversation_id,
-            user_id=request_user_id,
+        # Re-fetch messages with the newly added user message
+        conversation_messages = await asyncio.to_thread(
+            chat_manager_instance.get_messages,
+            request_conversation_id,
+            request_user_id,
         )
 
-        result = _invoke_graph(conversation_messages, request_user_id, request_conversation_id)
+        # ── Invoke graph with pre-classified intent ──────────────────────
 
-        # Cost delta
+        pre_classified: Dict[str, Any] | None = None
+        if audio_intent and audio_confidence > 0.0:
+            pre_classified = {
+                "route_intent": audio_intent,
+                "route_confidence": audio_confidence,
+                "route_agent": _AUDIO_INTENT_AGENT_MAP.get(audio_intent, "default_agent"),
+            }
+
+        result = await asyncio.to_thread(
+            _invoke_graph,
+            conversation_messages,
+            request_user_id,
+            request_conversation_id,
+            pre_classified=pre_classified,
+        )
+
+        # ── Cost tracking ────────────────────────────────────────────────
+
         cost_delta = cost_tracker.calculate_delta(cost_snapshot)
         if cost_delta.get("cost", 0) > 0 or cost_delta.get("calls", 0) > 0:
             chat_manager_instance.update_conversation_costs(

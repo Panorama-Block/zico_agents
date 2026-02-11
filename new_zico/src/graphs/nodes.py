@@ -10,6 +10,7 @@ import logging
 from typing import Any, Dict, List, Optional
 
 from langchain_core.messages import AIMessage, HumanMessage, SystemMessage
+from langchain_core.runnables import RunnableConfig
 
 from src.agents.config import Config
 from src.agents.metadata import metadata
@@ -175,35 +176,56 @@ def entry_node(state: AgentState) -> dict:
 # ---------------------------------------------------------------------------
 
 def semantic_router_node(state: AgentState) -> dict:
-    """Classify intent via embeddings, pre-extract params, run preflight."""
+    """Classify intent via embeddings, pre-extract params, run preflight.
+
+    If ``route_intent`` is already populated (e.g. pre-classified from the
+    audio transcription step), the embedding classification is skipped —
+    saving ~200 ms.  Pre-extraction and preflight still run normally.
+    """
     last_user_msg = state.get("last_user_message", "")
     has_active_defi = state.get("has_active_defi", False)
     nodes = list(state.get("nodes_executed", []))
     nodes.append("semantic_router_node")
 
-    # Skip semantic router when DeFi flow is active
-    route = None
-    if last_user_msg and not has_active_defi and _semantic_router:
-        route = _semantic_router.classify(last_user_msg)
-        if route:
-            logger.debug(
-                "SemanticRouter: intent=%s confidence=%.3f agent=%s",
-                route.intent.value,
-                route.confidence,
-                route.agent_name,
-            )
+    # --- Check for pre-classified intent (audio path) ---
+    pre_intent = state.get("route_intent")
+    pre_confidence = state.get("route_confidence", 0.0)
+    pre_agent = state.get("route_agent")
 
-    intent_str = route.intent.value if route else None
-    confidence = route.confidence if route else 0.0
-    agent_name = route.agent_name if route else None
-    needs_confirm = route.needs_llm_confirmation if route else True
+    if pre_intent and pre_confidence > 0:
+        # Already classified (e.g. audio transcription + classification)
+        logger.debug(
+            "SemanticRouter SKIPPED (pre-classified): intent=%s confidence=%.3f agent=%s",
+            pre_intent, pre_confidence, pre_agent,
+        )
+        intent_str = pre_intent
+        confidence = pre_confidence
+        agent_name = pre_agent
+        needs_confirm = confidence < SemanticRouter.HIGH_CONFIDENCE
+    else:
+        # Normal path: classify via embeddings
+        route = None
+        if last_user_msg and not has_active_defi and _semantic_router:
+            route = _semantic_router.classify(last_user_msg)
+            if route:
+                logger.debug(
+                    "SemanticRouter: intent=%s confidence=%.3f agent=%s",
+                    route.intent.value,
+                    route.confidence,
+                    route.agent_name,
+                )
 
-    # Pre-extraction + preflight
+        intent_str = route.intent.value if route else None
+        confidence = route.confidence if route else 0.0
+        agent_name = route.agent_name if route else None
+        needs_confirm = route.needs_llm_confirmation if route else True
+
+    # Pre-extraction + preflight (runs regardless of classification source)
     extracted = None
     preflight_errors: List[str] = []
     pre_hint: Optional[str] = None
 
-    if route and confidence >= SemanticRouter.LOW_CONFIDENCE:
+    if intent_str and confidence >= SemanticRouter.LOW_CONFIDENCE:
         if intent_str in ("swap", "lending", "staking", "dca"):
             extracted = pre_extract(last_user_msg, intent_str)
 
@@ -312,6 +334,7 @@ def _invoke_defi_agent(
     session_ctx,
     state: AgentState,
     intent_type: str,
+    config: RunnableConfig | None = None,
 ) -> dict:
     """Shared logic for invoking a DeFi agent with session scoping."""
     user_id = state.get("user_id")
@@ -348,7 +371,7 @@ def _invoke_defi_agent(
 
     try:
         with session_ctx(user_id=user_id, conversation_id=conversation_id):
-            response = agent.invoke({"messages": scoped_messages})
+            response = agent.invoke({"messages": scoped_messages}, config=config)
     except Exception:
         logger.exception("Error invoking %s", agent_key)
         return {
@@ -371,23 +394,23 @@ def _invoke_defi_agent(
     }
 
 
-def swap_agent_node(state: AgentState) -> dict:
-    return _invoke_defi_agent("swap_agent", SWAP_AGENT_SYSTEM_PROMPT, swap_session, state, "swap")
+def swap_agent_node(state: AgentState, config: RunnableConfig | None = None) -> dict:
+    return _invoke_defi_agent("swap_agent", SWAP_AGENT_SYSTEM_PROMPT, swap_session, state, "swap", config)
 
 
-def lending_agent_node(state: AgentState) -> dict:
-    return _invoke_defi_agent("lending_agent", LENDING_AGENT_SYSTEM_PROMPT, lending_session, state, "lending")
+def lending_agent_node(state: AgentState, config: RunnableConfig | None = None) -> dict:
+    return _invoke_defi_agent("lending_agent", LENDING_AGENT_SYSTEM_PROMPT, lending_session, state, "lending", config)
 
 
-def staking_agent_node(state: AgentState) -> dict:
-    return _invoke_defi_agent("staking_agent", STAKING_AGENT_SYSTEM_PROMPT, staking_session, state, "staking")
+def staking_agent_node(state: AgentState, config: RunnableConfig | None = None) -> dict:
+    return _invoke_defi_agent("staking_agent", STAKING_AGENT_SYSTEM_PROMPT, staking_session, state, "staking", config)
 
 
-def dca_agent_node(state: AgentState) -> dict:
-    return _invoke_defi_agent("dca_agent", DCA_AGENT_SYSTEM_PROMPT, dca_session, state, "dca")
+def dca_agent_node(state: AgentState, config: RunnableConfig | None = None) -> dict:
+    return _invoke_defi_agent("dca_agent", DCA_AGENT_SYSTEM_PROMPT, dca_session, state, "dca", config)
 
 
-def _invoke_simple_agent(agent_key: str, state: AgentState) -> dict:
+def _invoke_simple_agent(agent_key: str, state: AgentState, config: RunnableConfig | None = None) -> dict:
     """Shared logic for invoking a non-DeFi agent (no session scoping)."""
     user_id = state.get("user_id")
     conversation_id = state.get("conversation_id")
@@ -406,7 +429,7 @@ def _invoke_simple_agent(agent_key: str, state: AgentState) -> dict:
         }
 
     try:
-        response = agent.invoke({"messages": langchain_messages})
+        response = agent.invoke({"messages": langchain_messages}, config=config)
     except Exception:
         logger.exception("Error invoking %s", agent_key)
         return {
@@ -429,17 +452,17 @@ def _invoke_simple_agent(agent_key: str, state: AgentState) -> dict:
     }
 
 
-def crypto_agent_node(state: AgentState) -> dict:
-    return _invoke_simple_agent("crypto_agent", state)
+def crypto_agent_node(state: AgentState, config: RunnableConfig | None = None) -> dict:
+    return _invoke_simple_agent("crypto_agent", state, config)
 
 
-def search_agent_node(state: AgentState) -> dict:
-    return _invoke_simple_agent("search_agent", state)
+def search_agent_node(state: AgentState, config: RunnableConfig | None = None) -> dict:
+    return _invoke_simple_agent("search_agent", state, config)
 
 
-def default_agent_node(state: AgentState) -> dict:
-    return _invoke_simple_agent("default_agent", state)
+def default_agent_node(state: AgentState, config: RunnableConfig | None = None) -> dict:
+    return _invoke_simple_agent("default_agent", state, config)
 
 
-def database_agent_node(state: AgentState) -> dict:
-    return _invoke_simple_agent("database_agent", state)
+def database_agent_node(state: AgentState, config: RunnableConfig | None = None) -> dict:
+    return _invoke_simple_agent("database_agent", state, config)

@@ -1,6 +1,7 @@
 """System prompt for the specialized lending agent."""
+from src.agents.markdown_instructions import MARKDOWN_INSTRUCTIONS
 
-LENDING_AGENT_SYSTEM_PROMPT = """
+LENDING_AGENT_SYSTEM_PROMPT = f"""
 You are Zico's lending orchestrator.
 Your goal is to help the user define a lending operation (supply, borrow, repay, withdraw) by collecting the necessary details.
 
@@ -33,4 +34,4 @@ User: 100.
 Assistant: (call `update_lending_intent` with `amount=100`)
 Tool: `event` -> `lending_intent_ready`
 Assistant: "All set. Ready to supply 100 USDC on Arbitrum."
-"""
+{MARKDOWN_INSTRUCTIONS}"""

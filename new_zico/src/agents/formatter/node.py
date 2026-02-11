@@ -19,26 +19,32 @@ from src.graphs.utils import sanitize_handoff_phrases
 
 logger = logging.getLogger(__name__)
 
-# Patterns that indicate the response already has markdown formatting
-_MARKDOWN_INDICATORS = re.compile(
-    r"(\*\*[^*]+\*\*"   # bold
-    r"|^#{1,3}\s"        # headers
-    r"|^\s*[-*]\s"       # bullets
-    r"|^\|.+\|$"         # table rows
+# Maximum length for "short" responses that skip formatting
+_SHORT_RESPONSE_THRESHOLD = 120
+
+# Structural quality: headers/lists MUST be at the start of a line
+_STRUCTURAL_MARKERS = re.compile(
+    r"(^#{1,3}\s"       # headers at line start
+    r"|^\s*[-*]\s"      # bullets at line start
+    r"|^\d+\.\s"        # numbered list at line start
+    r"|^\|.+\|$"        # table rows
     r")",
     re.MULTILINE,
 )
 
-# Maximum length for "short" responses that skip formatting
-_SHORT_RESPONSE_THRESHOLD = 120
-
 
 def _already_formatted(text: str) -> bool:
-    """Return True if text already contains markdown formatting."""
+    """Return True if text is properly structured markdown.
+
+    Having **bold** alone is not enough — we need structural elements
+    (headers, lists, tables) on their own lines to consider the text
+    well-formatted.
+    """
     if len(text) <= _SHORT_RESPONSE_THRESHOLD:
         return True
-    matches = _MARKDOWN_INDICATORS.findall(text)
-    return len(matches) >= 2
+    structural_matches = _STRUCTURAL_MARKERS.findall(text)
+    # Need at least 3 structural elements on proper lines
+    return len(structural_matches) >= 3
 
 
 def formatter_node(state: AgentState) -> dict:
@@ -59,7 +65,8 @@ def formatter_node(state: AgentState) -> dict:
 
     # Use LLM to format
     try:
-        llm = Config.get_fast_llm(with_cost_tracking=True)
+        from src.llm.tiers import ModelTier
+        llm = Config.get_llm(model=ModelTier.FORMATTER, with_cost_tracking=True)
         result = llm.invoke([
             SystemMessage(content=FORMATTER_SYSTEM_PROMPT),
             HumanMessage(content=response_text),

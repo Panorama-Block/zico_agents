@@ -13,6 +13,7 @@ class ModelTier:
     FAST = "gemini-2.5-flash"
     EXECUTION = "gemini-2.5-flash"
     TRANSCRIPTION = "gemini-2.0-flash"
+    FORMATTER = "gemini-2.0-flash"
 
 
 # Maps agent runtime names to their optimal tier.

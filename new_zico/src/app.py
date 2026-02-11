@@ -430,6 +430,8 @@ def chat(request: ChatRequest):
             return _build_response_payload(result, user_id, conversation_id)
 
         return {"response": "No response available", "agentName": "supervisor"}
+    except HTTPException:
+        raise
     except Exception as e:
         logger.exception(
             "Chat handler failed for user=%s conversation=%s",

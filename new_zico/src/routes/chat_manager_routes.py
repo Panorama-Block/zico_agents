@@ -52,17 +52,14 @@ async def get_users():
 @router.post("/conversations")
 async def create_conversation(
     user_id_query: str = Query(default=None, alias="user_id"),
-    user_id_body: Optional[UserIdRequest] = None,
-    user_id_str: Optional[str] = Body(default=None)
+    body: Optional[Dict[str, str]] = Body(default=None)
 ):
     """Create a new conversation for a specific user"""
-    user_id = None
-    if user_id_body:
-        user_id = user_id_body.user_id
-    elif user_id_str:
-        user_id = user_id_str
-    else:
-        user_id = user_id_query
+    user_id = user_id_query
+    if isinstance(body, dict):
+        payload_user_id = body.get("user_id")
+        if isinstance(payload_user_id, str) and payload_user_id.strip():
+            user_id = payload_user_id.strip()
 
     if not user_id:
         user_id = "anonymous"

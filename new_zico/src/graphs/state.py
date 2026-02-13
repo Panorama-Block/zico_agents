@@ -14,6 +14,7 @@ class AgentState(TypedDict, total=False):
     messages: List[Dict[str, Any]]          # Raw conversation messages from the gateway
     user_id: str
     conversation_id: str
+    wallet_address: Optional[str]           # EVM wallet address (from HTTP request)
 
     # --- Windowed context ---
     windowed_messages: List[Dict[str, Any]] # After context windowing

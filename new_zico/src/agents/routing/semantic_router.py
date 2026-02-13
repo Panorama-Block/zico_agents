@@ -27,6 +27,7 @@ class IntentCategory(str, Enum):
     STAKING = "staking"
     DCA = "dca"
     MARKET_DATA = "market_data"
+    PORTFOLIO = "portfolio"
     EDUCATION = "education"
     SEARCH = "search"
     GENERAL = "general"
@@ -39,6 +40,7 @@ _INTENT_AGENT_MAP: Dict[IntentCategory, str] = {
     IntentCategory.STAKING: "staking_agent",
     IntentCategory.DCA: "dca_agent",
     IntentCategory.MARKET_DATA: "crypto_agent",
+    IntentCategory.PORTFOLIO: "portfolio_advisor",
     IntentCategory.EDUCATION: "default_agent",
     IntentCategory.SEARCH: "search_agent",
     IntentCategory.GENERAL: "default_agent",
@@ -113,6 +115,32 @@ INTENT_EXEMPLARS: Dict[IntentCategory, List[str]] = {
         "Current ETH price",
         "Bitcoin market cap",
         "What is the TVL of Avalanche?",
+    ],
+    IntentCategory.PORTFOLIO: [
+        "Analyze my portfolio",
+        "What's my biggest risk?",
+        "How should I rebalance my wallet?",
+        "Show me my token holdings",
+        "What tokens do I have?",
+        "Am I too exposed to any single token?",
+        "Give me a risk assessment of my wallet",
+        "How diversified is my portfolio?",
+        "What should I do with my tokens?",
+        "What is the amount of each token?",
+        "How much of each token do I hold?",
+        "Show me the value of each position",
+        "List all my tokens with balances",
+        "Where am I most exposed?",
+        "Which tokens should I sell?",
+        "Where should I take more risk?",
+        "Where should I be more careful?",
+        "Is my wallet safe?",
+        "Analise minha carteira",
+        "Qual meu maior risco?",
+        "Como balancear minha carteira?",
+        "Quais tokens eu tenho?",
+        "Quanto tenho de cada token?",
+        "Onde posso arriscar mais?",
     ],
     IntentCategory.EDUCATION: [
         "What is DeFi?",

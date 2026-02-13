@@ -2,10 +2,12 @@ import asyncio
 import base64
 import json
 import os
+import time
 from typing import Any, Dict, List, Optional
 
 from fastapi import FastAPI, File, Form, HTTPException, Request, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import StreamingResponse
 from langchain_core.messages import HumanMessage
 from pydantic import BaseModel
 
@@ -135,6 +137,7 @@ def _map_agent_type(agent_name: str) -> str:
         "swap_agent": "token swap",
         "lending_agent": "lending",
         "staking_agent": "staking",
+        "portfolio_advisor": "portfolio analysis",
         "supervisor": "supervisor",
     }
     return mapping.get(agent_name, "supervisor")
@@ -177,6 +180,7 @@ def _invoke_graph(
     user_id,
     conversation_id,
     *,
+    wallet_address: str | None = None,
     pre_classified: Dict[str, Any] | None = None,
 ):
     """Invoke the StateGraph and return the result state.
@@ -189,6 +193,7 @@ def _invoke_graph(
         "messages": conversation_messages,
         "user_id": user_id,
         "conversation_id": conversation_id,
+        "wallet_address": wallet_address,
     }
     if pre_classified:
         initial_state.update(pre_classified)
@@ -408,7 +413,7 @@ def chat(request: ChatRequest):
         cost_snapshot = cost_tracker.get_snapshot()
 
         # Invoke the StateGraph
-        result = _invoke_graph(conversation_messages, user_id, conversation_id)
+        result = _invoke_graph(conversation_messages, user_id, conversation_id, wallet_address=wallet)
 
         # Calculate and save cost delta
         cost_delta = cost_tracker.calculate_delta(cost_snapshot)
@@ -439,6 +444,318 @@ def chat(request: ChatRequest):
             conversation_id,
         )
         raise HTTPException(status_code=500, detail=str(e))
+
+
+# ---------------------------------------------------------------------------
+# SSE Streaming endpoint
+# ---------------------------------------------------------------------------
+
+# Human-readable labels for each graph node
+_NODE_LABELS: Dict[str, str] = {
+    "entry_node": "Preparing context...",
+    "semantic_router_node": "Routing your request...",
+    "llm_router_node": "Analyzing intent...",
+    "swap_agent_node": "Consulting swap protocols...",
+    "lending_agent_node": "Checking lending markets...",
+    "staking_agent_node": "Reviewing staking options...",
+    "dca_agent_node": "Planning DCA strategy...",
+    "crypto_agent_node": "Fetching market data...",
+    "search_agent_node": "Searching the web...",
+    "default_agent_node": "Thinking...",
+    "database_agent_node": "Querying portfolio...",
+    "portfolio_advisor_node": "Analyzing your portfolio...",
+    "formatter_node": "Formatting response...",
+    "error_node": "Validating parameters...",
+}
+
+
+def _sse(event_type: str, data: dict) -> str:
+    """Format a Server-Sent Event string."""
+    return f"event: {event_type}\ndata: {json.dumps(data, ensure_ascii=False)}\n\n"
+
+
+async def _persist_response_bg(
+    full_response: str,
+    response_agent: str,
+    response_metadata: dict,
+    user_id: str,
+    conversation_id: str,
+    cost_delta: dict,
+) -> None:
+    """Background task: persist assistant message and update costs."""
+    try:
+        agent_name = _map_agent_type(response_agent)
+        response_message = ChatMessage(
+            role="assistant",
+            content=full_response,
+            agent_name=agent_name,
+            agent_type=_map_agent_type(agent_name),
+            metadata=response_metadata,
+            conversation_id=conversation_id,
+            user_id=user_id,
+            requires_action=(
+                True if agent_name in ("token swap", "lending", "staking") else False
+            ),
+            action_type=(
+                "swap"
+                if agent_name == "token swap"
+                else "lending"
+                if agent_name == "lending"
+                else "staking"
+                if agent_name == "staking"
+                else None
+            ),
+        )
+        await asyncio.to_thread(
+            chat_manager_instance.add_message,
+            response_message.dict(),
+            conversation_id,
+            user_id,
+        )
+
+        if cost_delta.get("cost", 0) > 0 or cost_delta.get("calls", 0) > 0:
+            await asyncio.to_thread(
+                chat_manager_instance.update_conversation_costs,
+                cost_delta,
+                conversation_id,
+                user_id,
+            )
+
+        # Clear DeFi metadata when intent is ready
+        _clear_ready_metadata(agent_name, response_metadata, user_id, conversation_id)
+    except Exception:
+        logger.exception("Failed to persist streamed response")
+
+
+@app.post("/chat/stream")
+async def chat_stream(request: ChatRequest):
+    """SSE streaming endpoint — streams thought process + tokens in real-time.
+
+    Event types:
+      - ``status``  : node lifecycle (step label, routing info)
+      - ``token``   : incremental text chunks from the final LLM response
+      - ``tool_io`` : tool invocation results (truncated for the wire)
+      - ``done``    : final metadata envelope (agent, nodes, costs)
+      - ``error``   : unrecoverable error
+    """
+    uid: str | None = None
+    cid: str | None = None
+    try:
+        uid, cid = _resolve_identity(request)
+    except HTTPException as exc:
+        # Return error as a streaming event so the client can parse it
+        async def _err():
+            yield _sse("error", {"message": exc.detail})
+
+        return StreamingResponse(_err(), media_type="text/event-stream")
+
+    user_id, conversation_id = uid, cid
+
+    wallet = request.wallet_address.strip() if request.wallet_address else None
+    if wallet and wallet.lower() == "default":
+        wallet = None
+    display_name = None
+    if isinstance(request.message.metadata, dict):
+        display_name = request.message.metadata.get("display_name")
+
+    # Session setup, message persistence, and history fetch (non-blocking)
+    await asyncio.to_thread(
+        chat_manager_instance.ensure_session,
+        user_id,
+        conversation_id,
+        wallet_address=wallet,
+        display_name=display_name,
+    )
+
+    if request.message.role == "user":
+        clean_content = _sanitize_user_message_content(request.message.content)
+        if clean_content is not None:
+            request.message.content = clean_content
+
+    await asyncio.to_thread(
+        chat_manager_instance.add_message,
+        request.message.dict(),
+        conversation_id,
+        user_id,
+    )
+
+    conversation_messages = await asyncio.to_thread(
+        chat_manager_instance.get_messages,
+        conversation_id,
+        user_id,
+    )
+
+    initial_state: Dict[str, Any] = {
+        "messages": conversation_messages,
+        "user_id": user_id,
+        "conversation_id": conversation_id,
+        "wallet_address": wallet,
+    }
+
+    async def event_generator():
+        """Yields SSE events from LangGraph astream_events."""
+        cost_tracker = Config.get_cost_tracker()
+        cost_snapshot = cost_tracker.get_snapshot()
+
+        final_response_chunks: List[str] = []
+        response_agent = "supervisor"
+        response_metadata: Dict[str, Any] = {}
+        nodes_executed: List[str] = []
+        # Track which node is the "final agent" so we only stream its tokens
+        current_agent_node: str | None = None
+        streaming_tokens = False
+
+        try:
+            async for event in graph.astream_events(
+                initial_state, version="v2"
+            ):
+                kind = event["event"]
+                name = event.get("name", "")
+
+                # ── Node starts ──
+                if kind == "on_chain_start" and name in _NODE_LABELS:
+                    nodes_executed.append(name)
+                    # Track agent node for token attribution
+                    if name.endswith("_agent_node"):
+                        current_agent_node = name
+                    yield _sse("status", {
+                        "step": name,
+                        "label": _NODE_LABELS[name],
+                        "ts": time.time(),
+                    })
+
+                # ── Semantic router result ──
+                elif kind == "on_chain_end" and name == "semantic_router_node":
+                    output = event.get("data", {}).get("output", {})
+                    if isinstance(output, dict):
+                        yield _sse("status", {
+                            "step": "routed",
+                            "agent": output.get("route_agent", "unknown"),
+                            "confidence": output.get("route_confidence", 0),
+                            "ts": time.time(),
+                        })
+
+                # ── Tool invocations ──
+                elif kind == "on_tool_start":
+                    yield _sse("status", {
+                        "step": "tool",
+                        "tool": name,
+                        "label": f"Using {name}...",
+                        "ts": time.time(),
+                    })
+
+                elif kind == "on_tool_end":
+                    tool_output = event.get("data", {}).get("output", "")
+                    preview = str(tool_output)[:200]
+                    yield _sse("tool_io", {
+                        "tool": name,
+                        "output": preview,
+                        "ts": time.time(),
+                    })
+
+                # ── LLM token streaming ──
+                elif kind == "on_chat_model_stream":
+                    chunk = event.get("data", {}).get("chunk")
+                    if chunk and hasattr(chunk, "content") and chunk.content:
+                        text = chunk.content if isinstance(chunk.content, str) else ""
+                        if text:
+                            # Only stream tokens from agent nodes, not from
+                            # router/formatter internal calls
+                            parent_tags = event.get("tags", [])
+                            is_formatter = "formatter" in name.lower() or any(
+                                "formatter" in t for t in parent_tags
+                            )
+                            if not is_formatter and current_agent_node:
+                                if not streaming_tokens:
+                                    streaming_tokens = True
+                                    yield _sse("status", {
+                                        "step": "generating",
+                                        "label": "Generating response...",
+                                        "ts": time.time(),
+                                    })
+                                final_response_chunks.append(text)
+                                yield _sse("token", {"t": text})
+
+                # ── Node ends — capture graph output ──
+                elif kind == "on_chain_end" and name == "LangGraph":
+                    output = event.get("data", {}).get("output", {})
+                    if isinstance(output, dict):
+                        response_agent = output.get(
+                            "response_agent", response_agent
+                        )
+                        response_metadata = output.get(
+                            "response_metadata", response_metadata
+                        )
+                        # If we didn't stream tokens (e.g. formatter rewrote),
+                        # use the final_response from the graph
+                        if not final_response_chunks:
+                            graph_response = output.get("final_response", "")
+                            if graph_response:
+                                final_response_chunks.append(graph_response)
+
+        except Exception as exc:
+            logger.exception("Stream error for user=%s conversation=%s", user_id, conversation_id)
+            yield _sse("error", {"message": str(exc)})
+            return
+
+        # ── Build final metadata ──
+        full_response = "".join(final_response_chunks)
+        cost_delta = cost_tracker.calculate_delta(cost_snapshot)
+
+        agent_name = _map_agent_type(response_agent)
+
+        # Enrich metadata (same logic as _build_response_payload)
+        if not response_metadata:
+            if agent_name == "token swap":
+                swap_meta = metadata.get_swap_agent(
+                    user_id=user_id, conversation_id=conversation_id
+                )
+                if swap_meta:
+                    response_metadata = swap_meta
+            elif agent_name == "lending":
+                lending_meta = metadata.get_lending_agent(
+                    user_id=user_id, conversation_id=conversation_id
+                )
+                if lending_meta:
+                    response_metadata = lending_meta
+            elif agent_name == "staking":
+                staking_meta = metadata.get_staking_agent(
+                    user_id=user_id, conversation_id=conversation_id
+                )
+                if staking_meta:
+                    response_metadata = staking_meta
+
+        yield _sse("done", {
+            "agent": agent_name,
+            "nodes": nodes_executed,
+            "metadata": response_metadata,
+            "response": full_response,
+            "costs": {
+                "total_usd": cost_delta.get("cost", 0),
+            },
+        })
+
+        # ── Background: persist response + costs ──
+        asyncio.create_task(
+            _persist_response_bg(
+                full_response,
+                response_agent,
+                response_metadata,
+                user_id,
+                conversation_id,
+                cost_delta,
+            )
+        )
+
+    return StreamingResponse(
+        event_generator(),
+        media_type="text/event-stream",
+        headers={
+            "Cache-Control": "no-cache",
+            "Connection": "keep-alive",
+            "X-Accel-Buffering": "no",
+        },
+    )
 
 
 # Supported audio MIME types
@@ -481,6 +798,11 @@ Return ONLY a JSON object (no markdown fences) with these fields:
 {"transcription": "<exact transcription>", "intent": "<category>", "confidence": <0.0-1.0>}
 """
 
+_AUDIO_TRANSCRIBE_ONLY_PROMPT = """\
+You will receive an audio clip. Transcribe exactly what is being said.
+Return ONLY the transcription text, nothing else. No JSON, no markdown, no labels.
+"""
+
 # Maps audio classification intents to agent runtime names
 _AUDIO_INTENT_AGENT_MAP: Dict[str, str] = {
     "swap": "swap_agent",
@@ -488,6 +810,7 @@ _AUDIO_INTENT_AGENT_MAP: Dict[str, str] = {
     "staking": "staking_agent",
     "dca": "dca_agent",
     "market_data": "crypto_agent",
+    "portfolio": "portfolio_advisor",
     "search": "search_agent",
     "education": "default_agent",
     "general": "default_agent",
@@ -697,6 +1020,7 @@ async def chat_audio(
             conversation_messages,
             request_user_id,
             request_conversation_id,
+            wallet_address=wallet,
             pre_classified=pre_classified,
         )
 
@@ -739,6 +1063,66 @@ async def chat_audio(
             request_user_id,
             request_conversation_id,
         )
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.post("/transcribe")
+async def transcribe_audio(
+    audio: UploadFile = File(..., description="Audio file (mp3, wav, flac, ogg, webm, m4a)"),
+):
+    """Transcribe audio to text without invoking the agent pipeline.
+
+    Stateless endpoint — no user_id, conversation_id, or persistence.
+    Returns ``{"text": "<transcription>"}``.
+    """
+    try:
+        audio_content = await audio.read()
+        if len(audio_content) > MAX_AUDIO_SIZE:
+            raise HTTPException(
+                status_code=413,
+                detail=f"Audio file too large. Maximum size is {MAX_AUDIO_SIZE // (1024 * 1024)}MB.",
+            )
+        if len(audio_content) == 0:
+            raise HTTPException(status_code=400, detail="Audio file is empty.")
+
+        mime_type = _get_audio_mime_type(audio.filename or "", audio.content_type)
+        encoded_audio = base64.b64encode(audio_content).decode("utf-8")
+
+        from src.llm.tiers import ModelTier
+        llm = Config.get_llm(model=ModelTier.TRANSCRIPTION, with_cost_tracking=True)
+
+        message = HumanMessage(
+            content=[
+                {"type": "text", "text": _AUDIO_TRANSCRIBE_ONLY_PROMPT},
+                {"type": "media", "data": encoded_audio, "mime_type": mime_type},
+            ]
+        )
+
+        response = await asyncio.to_thread(llm.invoke, [message])
+
+        raw_content = response.content
+        if isinstance(raw_content, list):
+            text_parts = []
+            for part in raw_content:
+                if isinstance(part, dict) and part.get("text"):
+                    text_parts.append(part["text"])
+                elif isinstance(part, str):
+                    text_parts.append(part)
+            raw_content = " ".join(text_parts).strip()
+
+        text = (raw_content or "").strip()
+        if not text:
+            raise HTTPException(
+                status_code=400,
+                detail="Could not transcribe the audio. Please try again with a clearer recording.",
+            )
+
+        return {"text": text}
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.exception("Transcribe endpoint failed")
         raise HTTPException(status_code=500, detail=str(e))
 
 

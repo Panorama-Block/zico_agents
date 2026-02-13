@@ -24,6 +24,7 @@ from src.graphs.nodes import (
     search_agent_node,
     default_agent_node,
     database_agent_node,
+    portfolio_advisor_node,
 )
 from src.graphs.edges import decide_route, after_llm_router
 from src.agents.formatter.node import formatter_node
@@ -40,6 +41,7 @@ _AGENT_NODES = [
     "search_agent_node",
     "default_agent_node",
     "database_agent_node",
+    "portfolio_advisor_node",
 ]
 
 
@@ -70,6 +72,7 @@ def build_graph() -> StateGraph:
     graph.add_node("search_agent_node", search_agent_node)
     graph.add_node("default_agent_node", default_agent_node)
     graph.add_node("database_agent_node", database_agent_node)
+    graph.add_node("portfolio_advisor_node", portfolio_advisor_node)
 
     # --- Entry point ---
     graph.set_entry_point("entry_node")
@@ -92,6 +95,7 @@ def build_graph() -> StateGraph:
             "search_agent_node": "search_agent_node",
             "default_agent_node": "default_agent_node",
             "database_agent_node": "database_agent_node",
+            "portfolio_advisor_node": "portfolio_advisor_node",
         },
     )
 
@@ -108,6 +112,7 @@ def build_graph() -> StateGraph:
             "search_agent_node": "search_agent_node",
             "default_agent_node": "default_agent_node",
             "database_agent_node": "database_agent_node",
+            "portfolio_advisor_node": "portfolio_advisor_node",
         },
     )
 

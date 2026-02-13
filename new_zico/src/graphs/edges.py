@@ -27,6 +27,7 @@ _INTENT_TO_NODE = {
     IntentCategory.STAKING.value: "staking_agent_node",
     IntentCategory.DCA.value: "dca_agent_node",
     IntentCategory.MARKET_DATA.value: "crypto_agent_node",
+    IntentCategory.PORTFOLIO.value: "portfolio_advisor_node",
     IntentCategory.SEARCH.value: "search_agent_node",
     IntentCategory.EDUCATION.value: "default_agent_node",
     IntentCategory.GENERAL.value: "default_agent_node",
@@ -41,6 +42,7 @@ _AGENT_NAME_TO_NODE = {
     "search_agent": "search_agent_node",
     "default_agent": "default_agent_node",
     "database_agent": "database_agent_node",
+    "portfolio_advisor": "portfolio_advisor_node",
 }
 
 # DeFi state key → node mapping

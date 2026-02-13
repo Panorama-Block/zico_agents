@@ -48,6 +48,9 @@ from src.agents.staking.agent import StakingAgent
 from src.agents.staking.tools import staking_session
 from src.agents.staking.prompt import STAKING_AGENT_SYSTEM_PROMPT
 from src.agents.search.agent import SearchAgent
+from src.agents.portfolio.agent import PortfolioAdvisorAgent
+from src.agents.portfolio.tools import portfolio_session
+from src.agents.portfolio.prompt import PORTFOLIO_ADVISOR_SYSTEM_PROMPT
 from src.agents.database.client import is_database_available
 
 logger = logging.getLogger(__name__)
@@ -89,6 +92,8 @@ def initialize_agents() -> None:
     _agents["dca_agent"] = DcaAgent(llm).agent
     _agents["lending_agent"] = LendingAgent(llm).agent
     _agents["staking_agent"] = StakingAgent(llm).agent
+
+    _agents["portfolio_advisor"] = PortfolioAdvisorAgent(llm).agent
 
     if is_database_available():
         _agents["database_agent"] = DatabaseAgent(llm)
@@ -261,6 +266,7 @@ Available agents:
 - dca_agent: Dollar-cost averaging strategies.
 - lending_agent: Lending operations (supply, borrow, repay, withdraw).
 - staking_agent: Staking operations (stake ETH, unstake stETH via Lido).
+- portfolio_advisor: Portfolio analysis, risk assessment, wallet holdings, rebalancing advice.
 - search_agent: Web search for current events and factual lookups.
 - database_agent: Database queries and data analysis.
 - default_agent: General conversation, education, greetings.
@@ -287,7 +293,8 @@ def llm_router_node(state: AgentState) -> dict:
         # Validate
         valid_agents = {
             "crypto_agent", "swap_agent", "dca_agent", "lending_agent",
-            "staking_agent", "search_agent", "database_agent", "default_agent",
+            "staking_agent", "portfolio_advisor", "search_agent",
+            "database_agent", "default_agent",
         }
         if chosen not in valid_agents:
             chosen = "default_agent"
@@ -462,6 +469,54 @@ def search_agent_node(state: AgentState, config: RunnableConfig | None = None) -
 
 def default_agent_node(state: AgentState, config: RunnableConfig | None = None) -> dict:
     return _invoke_simple_agent("default_agent", state, config)
+
+
+def portfolio_advisor_node(state: AgentState, config: RunnableConfig | None = None) -> dict:
+    """Invoke the portfolio advisor with wallet_address session context."""
+    user_id = state.get("user_id")
+    conversation_id = state.get("conversation_id")
+    wallet_address = state.get("wallet_address")
+    langchain_messages = list(state.get("langchain_messages", []))
+    nodes = list(state.get("nodes_executed", []))
+    nodes.append("portfolio_advisor_node")
+
+    agent = _agents.get("portfolio_advisor")
+    if not agent:
+        return {
+            "final_response": "Portfolio advisor is not available.",
+            "response_agent": "portfolio_advisor",
+            "response_metadata": {},
+            "raw_agent_messages": [],
+            "nodes_executed": nodes,
+        }
+
+    # Inject system prompt
+    scoped_messages = [SystemMessage(content=PORTFOLIO_ADVISOR_SYSTEM_PROMPT)]
+    scoped_messages.extend(langchain_messages)
+
+    try:
+        with portfolio_session(user_id=user_id, conversation_id=conversation_id, wallet_address=wallet_address):
+            response = agent.invoke({"messages": scoped_messages}, config=config)
+    except Exception:
+        logger.exception("Error invoking portfolio_advisor")
+        return {
+            "final_response": "Sorry, an error occurred while analyzing your portfolio.",
+            "response_agent": "portfolio_advisor",
+            "response_metadata": {},
+            "raw_agent_messages": [],
+            "nodes_executed": nodes,
+        }
+
+    agent_name, text, messages_out = extract_response_from_graph(response)
+    meta = build_metadata(agent_name or "portfolio_advisor", user_id, conversation_id, messages_out)
+
+    return {
+        "final_response": text,
+        "response_agent": agent_name or "portfolio_advisor",
+        "response_metadata": meta,
+        "raw_agent_messages": messages_out,
+        "nodes_executed": nodes,
+    }
 
 
 def database_agent_node(state: AgentState, config: RunnableConfig | None = None) -> dict:

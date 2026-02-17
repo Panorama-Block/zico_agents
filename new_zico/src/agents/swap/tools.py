@@ -461,6 +461,13 @@ def update_swap_intent_tool(
                     except ValueError:
                         intent.to_token = None
 
+        # Same-chain swap heuristic: if from_network is set but to_network
+        # is missing, default to the same network.  This avoids an extra
+        # round-trip for the very common case where the user mentions only
+        # one network (e.g. "swap 0.1 ETH to USDC on Base").
+        if intent.from_network and not intent.to_network and to_network is None:
+            intent.to_network = intent.from_network
+
         if intent.to_network is None and to_token is not None:
             return _response(
                 intent,

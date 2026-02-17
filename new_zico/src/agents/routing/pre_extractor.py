@@ -74,6 +74,19 @@ _SWAP_PATTERN = re.compile(
     re.IGNORECASE,
 )
 
+# Cross-chain pattern: "swap X from Ethereum to Y on Arbitrum"
+# or "swap X on Ethereum for Y on Arbitrum"
+_CROSS_CHAIN_PATTERN = re.compile(
+    r"(?:swap|exchange|convert|trade|troque|trocar)\s+"
+    r"(?:(\d+(?:[.,]\d+)?)\s+)?"                       # optional amount
+    r"(\w+)\s+"                                          # from_token
+    r"(?:from|on|na|no|em)\s+(\S+)\s+"                  # from_network
+    r"(?:for|to|into|por|para)\s+"
+    r"(\w+)"                                             # to_token
+    r"(?:\s+(?:on|na|no|em)\s+(\S+))?",                 # to_network (optional)
+    re.IGNORECASE,
+)
+
 _LENDING_PATTERN = re.compile(
     r"(supply|borrow|repay|withdraw|deposit|lend)\s+"
     r"(?:(\d+(?:[.,]\d+)?)\s+)?"
@@ -124,14 +137,28 @@ def pre_extract(text: str, intent: str) -> PreExtractedParams:
     params = PreExtractedParams()
 
     if intent == "swap":
-        m = _SWAP_PATTERN.search(text)
-        if m:
-            params.amount = _safe_decimal(m.group(1))
-            params.from_token = m.group(2).upper()
-            params.to_token = m.group(3).upper()
-            if m.group(4):
-                params.from_network = m.group(4).lower()
+        # Try cross-chain pattern first: "swap X from Ethereum to Y on Arbitrum"
+        xm = _CROSS_CHAIN_PATTERN.search(text)
+        if xm:
+            params.amount = _safe_decimal(xm.group(1))
+            params.from_token = xm.group(2).upper()
+            params.from_network = xm.group(3).lower()
+            params.to_token = xm.group(4).upper()
+            params.to_network = (xm.group(5) or xm.group(3)).lower()
         else:
+            # Standard pattern: "swap X ETH to USDC on Base"
+            m = _SWAP_PATTERN.search(text)
+            if m:
+                params.amount = _safe_decimal(m.group(1))
+                params.from_token = m.group(2).upper()
+                params.to_token = m.group(3).upper()
+                if m.group(4):
+                    network = m.group(4).lower()
+                    params.from_network = network
+                    # Same-chain swap default: if only one network is
+                    # mentioned (e.g. "on Base"), assume both sides use it.
+                    params.to_network = network
+        if not params.has_any():
             # Try to extract at least amount + token
             am = _AMOUNT_TOKEN.search(text)
             if am:
@@ -139,7 +166,9 @@ def pre_extract(text: str, intent: str) -> PreExtractedParams:
                 params.from_token = am.group(2).upper()
             nm = _NETWORK_MENTION.search(text)
             if nm:
-                params.from_network = nm.group(1).lower()
+                network = nm.group(1).lower()
+                params.from_network = network
+                params.to_network = network
 
     elif intent == "lending":
         m = _LENDING_PATTERN.search(text)

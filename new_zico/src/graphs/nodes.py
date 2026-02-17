@@ -29,6 +29,7 @@ from src.graphs.utils import (
     detect_pending_followups,
     extract_response_from_graph,
     get_text_content,
+    is_swap_like_request,
 )
 
 # --- Agent imports ---
@@ -402,7 +403,66 @@ def _invoke_defi_agent(
 
 
 def swap_agent_node(state: AgentState, config: RunnableConfig | None = None) -> dict:
-    return _invoke_defi_agent("swap_agent", SWAP_AGENT_SYSTEM_PROMPT, swap_session, state, "swap", config)
+    """Invoke swap agent with both swap and portfolio session contexts.
+
+    The portfolio session gives the swap agent access to ``get_user_portfolio``
+    so users can check balances mid-swap without leaving the flow.
+    """
+    user_id = state.get("user_id")
+    conversation_id = state.get("conversation_id")
+    wallet_address = state.get("wallet_address")
+    langchain_messages = list(state.get("langchain_messages", []))
+    nodes = list(state.get("nodes_executed", []))
+    nodes.append("swap_agent_node")
+
+    agent = _agents.get("swap_agent")
+    if not agent:
+        return {
+            "final_response": "Agent not available.",
+            "response_agent": "swap_agent",
+            "response_metadata": {},
+            "raw_agent_messages": [],
+            "nodes_executed": nodes,
+        }
+
+    # Inject system prompt + DeFi guidance
+    scoped_messages = [SystemMessage(content=SWAP_AGENT_SYSTEM_PROMPT)]
+
+    defi_state = state.get("swap_state")
+    guidance = build_defi_guidance("swap", defi_state)
+    if guidance:
+        scoped_messages.append(SystemMessage(content=guidance))
+
+    hint = state.get("pre_extracted_hint")
+    if hint:
+        scoped_messages.append(SystemMessage(content=hint))
+
+    scoped_messages.extend(langchain_messages)
+
+    try:
+        with swap_session(user_id=user_id, conversation_id=conversation_id):
+            with portfolio_session(user_id=user_id, conversation_id=conversation_id, wallet_address=wallet_address):
+                response = agent.invoke({"messages": scoped_messages}, config=config)
+    except Exception:
+        logger.exception("Error invoking swap_agent")
+        return {
+            "final_response": "Sorry, an error occurred while processing your request.",
+            "response_agent": "swap_agent",
+            "response_metadata": {},
+            "raw_agent_messages": [],
+            "nodes_executed": nodes,
+        }
+
+    agent_name, text, messages_out = extract_response_from_graph(response)
+    meta = build_metadata(agent_name or "swap_agent", user_id, conversation_id, messages_out)
+
+    return {
+        "final_response": text,
+        "response_agent": agent_name or "swap_agent",
+        "response_metadata": meta,
+        "raw_agent_messages": messages_out,
+        "nodes_executed": nodes,
+    }
 
 
 def lending_agent_node(state: AgentState, config: RunnableConfig | None = None) -> dict:

@@ -46,5 +46,8 @@ class AgentState(TypedDict, total=False):
     response_metadata: Dict[str, Any]
     raw_agent_messages: List[Any]           # Raw messages from agent invocation
 
+    # --- Dual-path control ---
+    response_mode: str                      # "fast" | "reasoning"
+
     # --- Observability ---
     nodes_executed: List[str]               # Trace of executed node names

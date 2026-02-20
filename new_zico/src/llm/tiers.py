@@ -1,7 +1,8 @@
 """
 Tiered LLM model configuration.
 
-All agents use gemini-2.5-flash. Audio transcription uses gemini-2.0-flash.
+Fast path uses gemini-2.5-flash.  Reasoning path uses gemini-3-flash-preview.
+Audio transcription uses gemini-2.0-flash.
 """
 
 from __future__ import annotations
@@ -11,9 +12,11 @@ class ModelTier:
     """Canonical model identifiers per tier."""
 
     FAST = "gemini-2.5-flash"
+    REASONING = "gemini-3-flash-preview"
     EXECUTION = "gemini-2.5-flash"
     TRANSCRIPTION = "gemini-2.0-flash"
     FORMATTER = "gemini-2.0-flash"
+    ROUTER = "gemini-2.5-flash"
 
 
 # Maps agent runtime names to their optimal tier.

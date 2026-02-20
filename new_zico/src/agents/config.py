@@ -69,6 +69,7 @@ class Config:
     # Instance caches
     _llm_instance: BaseChatModel | None = None
     _llm_fast_instance: BaseChatModel | None = None
+    _llm_reasoning_instance: BaseChatModel | None = None
     _embeddings_instance: GoogleGenerativeAIEmbeddings | None = None
     _cost_tracker: CostTrackingCallback | None = None
 
@@ -135,6 +136,36 @@ class Config:
         return cls.get_llm(model=model, with_cost_tracking=with_cost_tracking)
 
     @classmethod
+    def get_reasoning_llm(cls, with_cost_tracking: bool = True) -> BaseChatModel:
+        """Return a cached REASONING-tier LLM (gemini-3-flash-preview)."""
+        if cls._llm_reasoning_instance is not None:
+            return cls._llm_reasoning_instance
+
+        callbacks = []
+        if with_cost_tracking:
+            callbacks.append(cls.get_cost_tracker())
+
+        llm = LLMFactory.create(
+            model=ModelTier.REASONING,
+            temperature=cls.DEFAULT_TEMPERATURE,
+            callbacks=callbacks if callbacks else None,
+            use_cache=False,
+        )
+        cls._llm_reasoning_instance = llm
+        return llm
+
+    @classmethod
+    def get_llm_for_mode(
+        cls,
+        mode: str = "fast",
+        with_cost_tracking: bool = True,
+    ) -> BaseChatModel:
+        """Return the LLM for a given response mode ('fast' or 'reasoning')."""
+        if mode == "reasoning":
+            return cls.get_reasoning_llm(with_cost_tracking=with_cost_tracking)
+        return cls.get_fast_llm(with_cost_tracking=with_cost_tracking)
+
+    @classmethod
     def get_embeddings(cls) -> GoogleGenerativeAIEmbeddings:
         """Get or create embeddings instance (singleton)."""
         if cls._embeddings_instance is None:
@@ -188,6 +219,7 @@ class Config:
     def reset_instances(cls) -> None:
         cls._llm_instance = None
         cls._llm_fast_instance = None
+        cls._llm_reasoning_instance = None
         cls._embeddings_instance = None
         if cls._cost_tracker:
             cls._cost_tracker.reset()

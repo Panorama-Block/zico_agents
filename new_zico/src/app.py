@@ -3,7 +3,7 @@ import base64
 import json
 import os
 import time
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List, Literal, Optional
 
 from fastapi import FastAPI, File, Form, HTTPException, Request, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
@@ -61,6 +61,7 @@ class ChatRequest(BaseModel):
     conversation_id: str = "default"
     user_id: str = "anonymous"
     metadata: Dict[str, Any] | None = None
+    response_mode: Literal["fast", "reasoning"] = "fast"
 
 
 # Lightweight in-memory agent config for frontend integrations
@@ -182,6 +183,7 @@ def _invoke_graph(
     *,
     wallet_address: str | None = None,
     pre_classified: Dict[str, Any] | None = None,
+    response_mode: str = "fast",
 ):
     """Invoke the StateGraph and return the result state.
 
@@ -194,6 +196,7 @@ def _invoke_graph(
         "user_id": user_id,
         "conversation_id": conversation_id,
         "wallet_address": wallet_address,
+        "response_mode": response_mode,
     }
     if pre_classified:
         initial_state.update(pre_classified)
@@ -413,7 +416,10 @@ def chat(request: ChatRequest):
         cost_snapshot = cost_tracker.get_snapshot()
 
         # Invoke the StateGraph
-        result = _invoke_graph(conversation_messages, user_id, conversation_id, wallet_address=wallet)
+        result = _invoke_graph(
+            conversation_messages, user_id, conversation_id,
+            wallet_address=wallet, response_mode=request.response_mode,
+        )
 
         # Calculate and save cost delta
         cost_delta = cost_tracker.calculate_delta(cost_snapshot)
@@ -590,6 +596,7 @@ async def chat_stream(request: ChatRequest):
         "user_id": user_id,
         "conversation_id": conversation_id,
         "wallet_address": wallet,
+        "response_mode": request.response_mode,
     }
 
     async def event_generator():
@@ -730,6 +737,7 @@ async def chat_stream(request: ChatRequest):
             "nodes": nodes_executed,
             "metadata": response_metadata,
             "response": full_response,
+            "response_mode": request.response_mode,
             "costs": {
                 "total_usd": cost_delta.get("cost", 0),
             },
@@ -1022,6 +1030,7 @@ async def chat_audio(
             request_conversation_id,
             wallet_address=wallet,
             pre_classified=pre_classified,
+            response_mode="fast",  # Audio path defaults to fast
         )
 
         # ── Cost tracking ────────────────────────────────────────────────

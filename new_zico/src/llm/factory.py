@@ -18,6 +18,7 @@ Provider = Literal["google", "openai", "anthropic"]
 
 MODEL_PROVIDERS: dict[Provider, list[str]] = {
     "google": [
+        "gemini-3-flash-preview",
         "gemini-3-pro-preview",
         "gemini-2.5-flash",
         "gemini-2.5-pro",

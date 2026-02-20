@@ -7,6 +7,7 @@ Each node takes an AgentState dict and returns a partial state update.
 from __future__ import annotations
 
 import logging
+from datetime import date
 from typing import Any, Dict, List, Optional
 
 from langchain_core.messages import AIMessage, HumanMessage, SystemMessage
@@ -14,6 +15,7 @@ from langchain_core.runnables import RunnableConfig
 
 from src.agents.config import Config
 from src.agents.metadata import metadata
+from src.agents.mode_directives import get_generic_directive, get_agent_directive
 from src.agents.routing.semantic_router import SemanticRouter
 from src.agents.routing.pre_extractor import pre_extract
 from src.agents.memory.windowing import prepare_context
@@ -62,16 +64,46 @@ logger = logging.getLogger(__name__)
 # ---------------------------------------------------------------------------
 
 _agents: Dict[str, Any] = {}
+_reasoning_agents: Dict[str, Any] = {}  # Lazy-built reasoning-tier agents
 _semantic_router: Optional[SemanticRouter] = None
 _swap_network_terms: set = set()
 _swap_token_terms: set = set()
 _lending_network_terms: set = set()
 _lending_asset_terms: set = set()
 
+# Maps agent keys to their builder classes for lazy reasoning agent creation
+_AGENT_BUILDERS: Dict[str, type] = {}
+
+
+def _get_agent(agent_key: str, mode: str = "fast"):
+    """Return the agent runnable for the given key and response mode.
+
+    Fast mode returns the startup-initialised singleton.
+    Reasoning mode lazily creates and caches an agent built with the
+    reasoning-tier LLM (gemini-3-flash-preview).
+    """
+    if mode != "reasoning":
+        return _agents.get(agent_key)
+
+    if agent_key in _reasoning_agents:
+        return _reasoning_agents[agent_key]
+
+    builder_cls = _AGENT_BUILDERS.get(agent_key)
+    if not builder_cls:
+        # No builder registered — fall back to the fast agent
+        logger.warning("No reasoning builder for %s; using fast agent", agent_key)
+        return _agents.get(agent_key)
+
+    reasoning_llm = Config.get_reasoning_llm(with_cost_tracking=True)
+    agent_instance = builder_cls(reasoning_llm)
+    _reasoning_agents[agent_key] = agent_instance.agent
+    logger.info("Lazily built reasoning agent for %s", agent_key)
+    return _reasoning_agents[agent_key]
+
 
 def initialize_agents() -> None:
     """Build all agent instances and the semantic router. Call once at startup."""
-    global _agents, _semantic_router
+    global _agents, _semantic_router, _AGENT_BUILDERS
     global _swap_network_terms, _swap_token_terms
     global _lending_network_terms, _lending_asset_terms
 
@@ -85,7 +117,7 @@ def initialize_agents() -> None:
     except Exception:
         logger.warning("SemanticRouter warm-up failed; keyword fallback will be used.")
 
-    # Build agents — all use the same LLM (gemini-2.5-flash)
+    # Build fast-tier agents (gemini-2.5-flash)
     _agents["crypto_agent"] = CryptoDataAgent(llm).agent
     _agents["search_agent"] = SearchAgent(llm).agent
     _agents["default_agent"] = DefaultAgent(llm).agent
@@ -100,6 +132,18 @@ def initialize_agents() -> None:
         _agents["database_agent"] = DatabaseAgent(llm)
     else:
         logger.info("Database not available; database_agent disabled.")
+
+    # Register builder classes for lazy reasoning-tier agent creation
+    _AGENT_BUILDERS = {
+        "crypto_agent": CryptoDataAgent,
+        "search_agent": SearchAgent,
+        "default_agent": DefaultAgent,
+        "swap_agent": SwapAgent,
+        "dca_agent": DcaAgent,
+        "lending_agent": LendingAgent,
+        "staking_agent": StakingAgent,
+        "portfolio_advisor": PortfolioAdvisorAgent,
+    }
 
     # Keyword detection terms
     _swap_network_terms, _swap_token_terms = build_swap_detection_terms()
@@ -137,9 +181,18 @@ def entry_node(state: AgentState) -> dict:
         elif role == "assistant":
             langchain_messages.append(AIMessage(content=content))
 
+    today = date.today().strftime("%B %d, %Y")
+    response_mode = state.get("response_mode", "fast")
+    mode_directive = get_generic_directive(response_mode)
+    base_instructions = (
+        f"Today's date is {today}.\n"
+        "Always respond in English, regardless of the user's language."
+    )
+    if mode_directive:
+        base_instructions += f"\n\n{mode_directive}"
     langchain_messages.insert(
         0,
-        SystemMessage(content="Always respond in English, regardless of the user's language."),
+        SystemMessage(content=base_instructions),
     )
 
     # Existing DeFi states
@@ -347,11 +400,12 @@ def _invoke_defi_agent(
     """Shared logic for invoking a DeFi agent with session scoping."""
     user_id = state.get("user_id")
     conversation_id = state.get("conversation_id")
+    response_mode = state.get("response_mode", "fast")
     langchain_messages = list(state.get("langchain_messages", []))
     nodes = list(state.get("nodes_executed", []))
     nodes.append(f"{agent_key}_node")
 
-    agent = _agents.get(agent_key)
+    agent = _get_agent(agent_key, response_mode)
     if not agent:
         return {
             "final_response": "Agent not available.",
@@ -363,6 +417,11 @@ def _invoke_defi_agent(
 
     # Inject system prompt
     scoped_messages = [SystemMessage(content=system_prompt)]
+
+    # Inject per-agent mode directive
+    agent_directive = get_agent_directive(agent_key, response_mode)
+    if agent_directive:
+        scoped_messages.append(SystemMessage(content=agent_directive))
 
     # Inject DeFi guidance if in-progress
     defi_state = state.get(f"{intent_type}_state")
@@ -411,11 +470,12 @@ def swap_agent_node(state: AgentState, config: RunnableConfig | None = None) -> 
     user_id = state.get("user_id")
     conversation_id = state.get("conversation_id")
     wallet_address = state.get("wallet_address")
+    response_mode = state.get("response_mode", "fast")
     langchain_messages = list(state.get("langchain_messages", []))
     nodes = list(state.get("nodes_executed", []))
     nodes.append("swap_agent_node")
 
-    agent = _agents.get("swap_agent")
+    agent = _get_agent("swap_agent", response_mode)
     if not agent:
         return {
             "final_response": "Agent not available.",
@@ -425,8 +485,12 @@ def swap_agent_node(state: AgentState, config: RunnableConfig | None = None) -> 
             "nodes_executed": nodes,
         }
 
-    # Inject system prompt + DeFi guidance
+    # Inject system prompt + per-agent mode directive + DeFi guidance
     scoped_messages = [SystemMessage(content=SWAP_AGENT_SYSTEM_PROMPT)]
+
+    agent_directive = get_agent_directive("swap_agent", response_mode)
+    if agent_directive:
+        scoped_messages.append(SystemMessage(content=agent_directive))
 
     defi_state = state.get("swap_state")
     guidance = build_defi_guidance("swap", defi_state)
@@ -481,11 +545,12 @@ def _invoke_simple_agent(agent_key: str, state: AgentState, config: RunnableConf
     """Shared logic for invoking a non-DeFi agent (no session scoping)."""
     user_id = state.get("user_id")
     conversation_id = state.get("conversation_id")
+    response_mode = state.get("response_mode", "fast")
     langchain_messages = list(state.get("langchain_messages", []))
     nodes = list(state.get("nodes_executed", []))
     nodes.append(f"{agent_key}_node")
 
-    agent = _agents.get(agent_key)
+    agent = _get_agent(agent_key, response_mode)
     if not agent:
         return {
             "final_response": "Agent not available.",
@@ -495,8 +560,15 @@ def _invoke_simple_agent(agent_key: str, state: AgentState, config: RunnableConf
             "nodes_executed": nodes,
         }
 
+    # Inject per-agent mode directive if available
+    agent_directive = get_agent_directive(agent_key, response_mode)
+    if agent_directive:
+        invoke_messages = [SystemMessage(content=agent_directive)] + langchain_messages
+    else:
+        invoke_messages = langchain_messages
+
     try:
-        response = agent.invoke({"messages": langchain_messages}, config=config)
+        response = agent.invoke({"messages": invoke_messages}, config=config)
     except Exception:
         logger.exception("Error invoking %s", agent_key)
         return {
@@ -536,11 +608,12 @@ def portfolio_advisor_node(state: AgentState, config: RunnableConfig | None = No
     user_id = state.get("user_id")
     conversation_id = state.get("conversation_id")
     wallet_address = state.get("wallet_address")
+    response_mode = state.get("response_mode", "fast")
     langchain_messages = list(state.get("langchain_messages", []))
     nodes = list(state.get("nodes_executed", []))
     nodes.append("portfolio_advisor_node")
 
-    agent = _agents.get("portfolio_advisor")
+    agent = _get_agent("portfolio_advisor", response_mode)
     if not agent:
         return {
             "final_response": "Portfolio advisor is not available.",
@@ -550,8 +623,13 @@ def portfolio_advisor_node(state: AgentState, config: RunnableConfig | None = No
             "nodes_executed": nodes,
         }
 
-    # Inject system prompt
+    # Inject system prompt + per-agent mode directive
     scoped_messages = [SystemMessage(content=PORTFOLIO_ADVISOR_SYSTEM_PROMPT)]
+
+    agent_directive = get_agent_directive("portfolio_advisor", response_mode)
+    if agent_directive:
+        scoped_messages.append(SystemMessage(content=agent_directive))
+
     scoped_messages.extend(langchain_messages)
 
     try:

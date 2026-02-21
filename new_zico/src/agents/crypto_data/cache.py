@@ -21,6 +21,9 @@ from typing import Any, Callable, Optional
 
 logger = logging.getLogger(__name__)
 
+# Sentinel for distinguishing "cached None" from "no entry"
+_MISSING = object()
+
 TTL_MAP: dict[str, int] = {
     "price": 30,
     "market_cap": 300,
@@ -32,6 +35,17 @@ TTL_MAP: dict[str, int] = {
     "tradingview": 86400,
 }
 
+# How long to cache errors to avoid hammering rate-limited APIs (seconds)
+ERROR_TTL: int = 30
+
+
+class _CachedError:
+    """Wrapper so we can store and re-raise cached exceptions."""
+    __slots__ = ("exc",)
+
+    def __init__(self, exc: Exception) -> None:
+        self.exc = exc
+
 
 class TieredCache:
     """Thread-safe in-memory cache with per-type TTL."""
@@ -42,15 +56,21 @@ class TieredCache:
         self._hits = 0
         self._misses = 0
 
-    def get(self, key: str, data_type: str) -> Optional[Any]:
+    def get(self, key: str, data_type: str) -> Any:
         ttl = TTL_MAP.get(data_type, 60)
         with self._lock:
             entry = self._store.get(key)
-            if entry is not None and (time.time() - entry[1]) < ttl:
+            if entry is None:
+                self._misses += 1
+                return _MISSING
+            value, ts = entry
+            # Errors use a shorter TTL
+            effective_ttl = ERROR_TTL if isinstance(value, _CachedError) else ttl
+            if (time.time() - ts) < effective_ttl:
                 self._hits += 1
-                return entry[0]
+                return value
             self._misses += 1
-            return None
+            return _MISSING
 
     def set(self, key: str, value: Any) -> None:
         with self._lock:
@@ -95,6 +115,7 @@ def cached(data_type: str):
     Decorator that caches the return value using the tiered TTL.
 
     Cache key is built from function name + positional/keyword arguments.
+    Exceptions are cached briefly (ERROR_TTL) to prevent rate-limit storms.
     """
 
     def decorator(func: Callable) -> Callable:
@@ -102,11 +123,16 @@ def cached(data_type: str):
         def wrapper(*args, **kwargs):
             cache_key = f"{func.__name__}:{args}:{sorted(kwargs.items())}"
             result = _cache.get(cache_key, data_type)
-            if result is not None:
+            if result is not _MISSING:
+                if isinstance(result, _CachedError):
+                    raise result.exc
                 return result
-            result = func(*args, **kwargs)
-            if result is not None:
-                _cache.set(cache_key, result)
+            try:
+                result = func(*args, **kwargs)
+            except Exception as exc:
+                _cache.set(cache_key, _CachedError(exc))
+                raise
+            _cache.set(cache_key, result)
             return result
 
         # Expose cache bypass for testing

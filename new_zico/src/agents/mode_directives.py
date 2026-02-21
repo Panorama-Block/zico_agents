@@ -2,8 +2,9 @@
 Mode-specific prompt directives for the dual-path system (Fast vs. Reasoning).
 
 Design principle:
-  - **Fast mode** adds NO extra instructions.  The agent prompts are already
-    optimised for Gemini 2.5 Flash.  Adding constraints degrades output quality.
+  - **Fast mode** adds a light structural guideline (title → content → conclusion)
+    to keep responses visually organised.  It does NOT restrict content or depth —
+    that would degrade output quality.
   - **Reasoning mode** ADDS depth: step-by-step analysis, richer formatting,
     risk warnings, source citation, and structured multi-section responses.
 
@@ -17,7 +18,15 @@ from __future__ import annotations
 # Generic directives (injected by entry_node for ALL agents)
 # ---------------------------------------------------------------------------
 
-FAST_DIRECTIVE = ""  # Intentionally empty — do not alter agent behaviour.
+FAST_DIRECTIVE = """\
+
+## Response Structure
+Organise every response with a clear visual structure:
+- Start with a **title** (## header) that summarises the topic.
+- Add a **subtitle** (### header) only when addressing distinct sub-topics.
+- Write the **content** in concise, well-formatted paragraphs or bullet lists.
+- End with a brief **conclusion** or key takeaway when the topic warrants it.\
+"""
 
 REASONING_DIRECTIVE = """\
 
@@ -129,10 +138,7 @@ Assign a numeric health score (e.g. 7.2/10).  Justify every recommendation.\
 # ---------------------------------------------------------------------------
 
 def get_generic_directive(mode: str) -> str:
-    """Return the generic directive block for the given mode.
-
-    Returns an empty string for fast mode (no extra instructions needed).
-    """
+    """Return the generic directive block for the given mode."""
     if mode == "reasoning":
         return REASONING_DIRECTIVE
     return FAST_DIRECTIVE

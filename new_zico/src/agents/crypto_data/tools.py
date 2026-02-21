@@ -238,18 +238,16 @@ def get_tvl_value(protocol_id: str) -> float:
         protocol_id: The slug identifier for the protocol.
 
     Returns:
-        TVL value (could be a dict or number depending on API).
+        Current TVL as a float.
     """
-    url = f"{Config.DEFILLAMA_BASE_URL}/chains"
+    url = f"{Config.DEFILLAMA_BASE_URL}/tvl/{protocol_id}"
     try:
-        print(f"URL: {url}")
         response = requests.get(url)
-        print(f"Response: {response.json()}")
         response.raise_for_status()
-        chains = response.json()
-        chain = next((c for c in chains if c["name"].lower() == protocol_id.lower()), None)
-        print(f"Chain: {chain}")
-        return chain["tvl"]
+        tvl = response.json()
+        if tvl is None:
+            raise ValueError(f"Protocol '{protocol_id}' not found on DeFiLlama")
+        return float(tvl)
     except requests.exceptions.RequestException as e:
         logging.error(f"Failed to retrieve protocol TVL: {e}")
         raise
@@ -363,7 +361,8 @@ def get_protocol_total_value_locked_tool(protocol_name: str) -> str:
             return Config.TVL_FAILURE_MESSAGE
         tag, tvl_value = next(iter(tvl.items()))
         return Config.TVL_SUCCESS_MESSAGE.format(protocol_name=protocol_name, tvl=tvl_value)
-    except requests.exceptions.RequestException:
+    except (requests.exceptions.RequestException, ValueError) as e:
+        logging.error(f"Failed to retrieve TVL for '{protocol_name}': {e}")
         return Config.API_ERROR_MESSAGE
 
 

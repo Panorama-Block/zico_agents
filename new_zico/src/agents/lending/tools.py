@@ -335,16 +335,9 @@ def update_lending_intent_tool(
                 LendingConfig.SUPPORTED_ACTIONS,
             )
 
-        if intent.network is None and network is not None:
-             # User tried to set network but maybe it was invalid or just checking
-             pass
-
+        # Auto-fill network to avalanche (only supported network)
         if intent.network is None:
-             return _response(
-                intent,
-                "On which network?",
-                LendingConfig.list_networks(),
-            )
+            intent.network = _validate_network("avalanche")
 
         if asset is not None:
             intent.asset = _validate_asset(asset, intent.network)

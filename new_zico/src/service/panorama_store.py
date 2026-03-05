@@ -227,6 +227,15 @@ class PanoramaStore:
             if exc.status_code != 404:
                 raise
 
+    def update_conversation_title(self, user_id: str, conversation_id: str, title: str) -> None:
+        """Update the title of an existing conversation."""
+        conv_key = _conversation_key(user_id, conversation_id)
+        self._client.update(
+            "conversations",
+            conv_key,
+            {"title": title, "updatedAt": _utc_now_iso()},
+        )
+
     def reset_conversation(self, user_id: str, conversation_id: str) -> None:
         messages = self.list_messages(user_id, conversation_id)
         deletes = [

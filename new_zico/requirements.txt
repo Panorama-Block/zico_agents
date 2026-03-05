@@ -6,6 +6,7 @@ fastapi==0.109.2
 uvicorn==0.27.1
 pydantic>=2.7.4
 python-multipart==0.0.9
+pdfplumber>=0.10.0
 
 # LangGraph (StateGraph — no supervisor dependency)
 langgraph>=0.2.70

@@ -533,6 +533,160 @@ async def _persist_response_bg(
         logger.exception("Failed to persist streamed response")
 
 
+def _build_event_generator(
+    initial_state: Dict[str, Any],
+    user_id: str,
+    conversation_id: str,
+    response_mode: str,
+):
+    """Factory that returns an async generator yielding SSE events from the graph."""
+
+    async def event_generator():
+        cost_tracker = Config.get_cost_tracker()
+        cost_snapshot = cost_tracker.get_snapshot()
+
+        final_response_chunks: List[str] = []
+        response_agent = "supervisor"
+        response_metadata: Dict[str, Any] = {}
+        nodes_executed: List[str] = []
+        current_agent_node: str | None = None
+        streaming_tokens = False
+
+        try:
+            async for event in graph.astream_events(
+                initial_state, version="v2"
+            ):
+                kind = event["event"]
+                name = event.get("name", "")
+
+                if kind == "on_chain_start" and name in _NODE_LABELS:
+                    nodes_executed.append(name)
+                    if name.endswith("_agent_node"):
+                        current_agent_node = name
+                    yield _sse("status", {
+                        "step": name,
+                        "label": _NODE_LABELS[name],
+                        "ts": time.time(),
+                    })
+
+                elif kind == "on_chain_end" and name == "semantic_router_node":
+                    output = event.get("data", {}).get("output", {})
+                    if isinstance(output, dict):
+                        yield _sse("status", {
+                            "step": "routed",
+                            "agent": output.get("route_agent", "unknown"),
+                            "confidence": output.get("route_confidence", 0),
+                            "ts": time.time(),
+                        })
+
+                elif kind == "on_tool_start":
+                    yield _sse("status", {
+                        "step": "tool",
+                        "tool": name,
+                        "label": f"Using {name}...",
+                        "ts": time.time(),
+                    })
+
+                elif kind == "on_tool_end":
+                    tool_output = event.get("data", {}).get("output", "")
+                    preview = str(tool_output)[:200]
+                    yield _sse("tool_io", {
+                        "tool": name,
+                        "output": preview,
+                        "ts": time.time(),
+                    })
+
+                elif kind == "on_chat_model_stream":
+                    chunk = event.get("data", {}).get("chunk")
+                    if chunk and hasattr(chunk, "content") and chunk.content:
+                        text = chunk.content if isinstance(chunk.content, str) else ""
+                        if text:
+                            parent_tags = event.get("tags", [])
+                            is_formatter = "formatter" in name.lower() or any(
+                                "formatter" in t for t in parent_tags
+                            )
+                            if not is_formatter and current_agent_node:
+                                if not streaming_tokens:
+                                    streaming_tokens = True
+                                    yield _sse("status", {
+                                        "step": "generating",
+                                        "label": "Generating response...",
+                                        "ts": time.time(),
+                                    })
+                                final_response_chunks.append(text)
+                                yield _sse("token", {"t": text})
+
+                elif kind == "on_chain_end" and name == "LangGraph":
+                    output = event.get("data", {}).get("output", {})
+                    if isinstance(output, dict):
+                        response_agent = output.get("response_agent", response_agent)
+                        response_metadata = output.get("response_metadata", response_metadata)
+                        if not final_response_chunks:
+                            graph_response = output.get("final_response", "")
+                            if graph_response:
+                                final_response_chunks.append(graph_response)
+
+        except Exception as exc:
+            logger.exception("Stream error for user=%s conversation=%s", user_id, conversation_id)
+            yield _sse("error", {"message": str(exc)})
+            return
+
+        full_response = "".join(final_response_chunks)
+        cost_delta = cost_tracker.calculate_delta(cost_snapshot)
+        agent_name = _map_agent_type(response_agent)
+
+        if not response_metadata:
+            if agent_name == "token swap":
+                swap_meta = metadata.get_swap_agent(user_id=user_id, conversation_id=conversation_id)
+                if swap_meta:
+                    response_metadata = swap_meta
+            elif agent_name == "lending":
+                lending_meta = metadata.get_lending_agent(user_id=user_id, conversation_id=conversation_id)
+                if lending_meta:
+                    response_metadata = lending_meta
+            elif agent_name == "staking":
+                staking_meta = metadata.get_staking_agent(user_id=user_id, conversation_id=conversation_id)
+                if staking_meta:
+                    response_metadata = staking_meta
+
+        yield _sse("done", {
+            "agent": agent_name,
+            "nodes": nodes_executed,
+            "metadata": response_metadata,
+            "response": full_response,
+            "response_mode": response_mode,
+            "costs": {"total_usd": cost_delta.get("cost", 0)},
+        })
+
+        asyncio.create_task(
+            _persist_response_bg(
+                full_response, response_agent, response_metadata,
+                user_id, conversation_id, cost_delta,
+            )
+        )
+
+    return event_generator
+
+
+def _streaming_response(
+    initial_state: Dict[str, Any],
+    user_id: str,
+    conversation_id: str,
+    response_mode: str,
+) -> StreamingResponse:
+    """Build a StreamingResponse from the shared event generator factory."""
+    gen = _build_event_generator(initial_state, user_id, conversation_id, response_mode)
+    return StreamingResponse(
+        gen(),
+        media_type="text/event-stream",
+        headers={
+            "Cache-Control": "no-cache",
+            "Connection": "keep-alive",
+            "X-Accel-Buffering": "no",
+        },
+    )
+
+
 @app.post("/chat/stream")
 async def chat_stream(request: ChatRequest):
     """SSE streaming endpoint — streams thought process + tokens in real-time.
@@ -599,171 +753,120 @@ async def chat_stream(request: ChatRequest):
         "response_mode": request.response_mode,
     }
 
-    async def event_generator():
-        """Yields SSE events from LangGraph astream_events."""
-        cost_tracker = Config.get_cost_tracker()
-        cost_snapshot = cost_tracker.get_snapshot()
+    return _streaming_response(initial_state, user_id, conversation_id, request.response_mode)
 
-        final_response_chunks: List[str] = []
-        response_agent = "supervisor"
-        response_metadata: Dict[str, Any] = {}
-        nodes_executed: List[str] = []
-        # Track which node is the "final agent" so we only stream its tokens
-        current_agent_node: str | None = None
-        streaming_tokens = False
 
-        try:
-            async for event in graph.astream_events(
-                initial_state, version="v2"
-            ):
-                kind = event["event"]
-                name = event.get("name", "")
+# ---------------------------------------------------------------------------
+# Streaming chat with file attachments (images + documents)
+# ---------------------------------------------------------------------------
 
-                # ── Node starts ──
-                if kind == "on_chain_start" and name in _NODE_LABELS:
-                    nodes_executed.append(name)
-                    # Track agent node for token attribution
-                    if name.endswith("_agent_node"):
-                        current_agent_node = name
-                    yield _sse("status", {
-                        "step": name,
-                        "label": _NODE_LABELS[name],
-                        "ts": time.time(),
-                    })
+@app.post("/chat/stream-with-files")
+async def chat_stream_with_files(
+    message: str = Form(...),
+    user_id: str = Form(...),
+    conversation_id: str = Form("default"),
+    wallet_address: str = Form("default"),
+    response_mode: Literal["fast", "reasoning"] = Form("fast"),
+    files: List[UploadFile] = File(default=[]),
+):
+    """SSE streaming with file attachments (images & documents).
 
-                # ── Semantic router result ──
-                elif kind == "on_chain_end" and name == "semantic_router_node":
-                    output = event.get("data", {}).get("output", {})
-                    if isinstance(output, dict):
-                        yield _sse("status", {
-                            "step": "routed",
-                            "agent": output.get("route_agent", "unknown"),
-                            "confidence": output.get("route_confidence", 0),
-                            "ts": time.time(),
-                        })
-
-                # ── Tool invocations ──
-                elif kind == "on_tool_start":
-                    yield _sse("status", {
-                        "step": "tool",
-                        "tool": name,
-                        "label": f"Using {name}...",
-                        "ts": time.time(),
-                    })
-
-                elif kind == "on_tool_end":
-                    tool_output = event.get("data", {}).get("output", "")
-                    preview = str(tool_output)[:200]
-                    yield _sse("tool_io", {
-                        "tool": name,
-                        "output": preview,
-                        "ts": time.time(),
-                    })
-
-                # ── LLM token streaming ──
-                elif kind == "on_chat_model_stream":
-                    chunk = event.get("data", {}).get("chunk")
-                    if chunk and hasattr(chunk, "content") and chunk.content:
-                        text = chunk.content if isinstance(chunk.content, str) else ""
-                        if text:
-                            # Only stream tokens from agent nodes, not from
-                            # router/formatter internal calls
-                            parent_tags = event.get("tags", [])
-                            is_formatter = "formatter" in name.lower() or any(
-                                "formatter" in t for t in parent_tags
-                            )
-                            if not is_formatter and current_agent_node:
-                                if not streaming_tokens:
-                                    streaming_tokens = True
-                                    yield _sse("status", {
-                                        "step": "generating",
-                                        "label": "Generating response...",
-                                        "ts": time.time(),
-                                    })
-                                final_response_chunks.append(text)
-                                yield _sse("token", {"t": text})
-
-                # ── Node ends — capture graph output ──
-                elif kind == "on_chain_end" and name == "LangGraph":
-                    output = event.get("data", {}).get("output", {})
-                    if isinstance(output, dict):
-                        response_agent = output.get(
-                            "response_agent", response_agent
-                        )
-                        response_metadata = output.get(
-                            "response_metadata", response_metadata
-                        )
-                        # If we didn't stream tokens (e.g. formatter rewrote),
-                        # use the final_response from the graph
-                        if not final_response_chunks:
-                            graph_response = output.get("final_response", "")
-                            if graph_response:
-                                final_response_chunks.append(graph_response)
-
-        except Exception as exc:
-            logger.exception("Stream error for user=%s conversation=%s", user_id, conversation_id)
-            yield _sse("error", {"message": str(exc)})
-            return
-
-        # ── Build final metadata ──
-        full_response = "".join(final_response_chunks)
-        cost_delta = cost_tracker.calculate_delta(cost_snapshot)
-
-        agent_name = _map_agent_type(response_agent)
-
-        # Enrich metadata (same logic as _build_response_payload)
-        if not response_metadata:
-            if agent_name == "token swap":
-                swap_meta = metadata.get_swap_agent(
-                    user_id=user_id, conversation_id=conversation_id
-                )
-                if swap_meta:
-                    response_metadata = swap_meta
-            elif agent_name == "lending":
-                lending_meta = metadata.get_lending_agent(
-                    user_id=user_id, conversation_id=conversation_id
-                )
-                if lending_meta:
-                    response_metadata = lending_meta
-            elif agent_name == "staking":
-                staking_meta = metadata.get_staking_agent(
-                    user_id=user_id, conversation_id=conversation_id
-                )
-                if staking_meta:
-                    response_metadata = staking_meta
-
-        yield _sse("done", {
-            "agent": agent_name,
-            "nodes": nodes_executed,
-            "metadata": response_metadata,
-            "response": full_response,
-            "response_mode": request.response_mode,
-            "costs": {
-                "total_usd": cost_delta.get("cost", 0),
-            },
-        })
-
-        # ── Background: persist response + costs ──
-        asyncio.create_task(
-            _persist_response_bg(
-                full_response,
-                response_agent,
-                response_metadata,
-                user_id,
-                conversation_id,
-                cost_delta,
-            )
-        )
-
-    return StreamingResponse(
-        event_generator(),
-        media_type="text/event-stream",
-        headers={
-            "Cache-Control": "no-cache",
-            "Connection": "keep-alive",
-            "X-Accel-Buffering": "no",
-        },
+    Accepts ``multipart/form-data`` with one or more files.
+    Images are encoded as base64 for Gemini multimodal content.
+    Documents (PDF, txt, md, csv) are text-extracted and injected as context.
+    """
+    from src.service.file_processing import (
+        get_file_mime_type, is_image, is_document,
+        encode_image_for_gemini, extract_text_from_document,
+        MAX_IMAGE_SIZE, MAX_DOCUMENT_SIZE,
     )
+
+    # --- Resolve identity (same logic as _resolve_identity but from Form fields) ---
+    uid = (user_id or "").strip()
+    if not uid or uid.lower() == "anonymous":
+        w = (wallet_address or "").strip()
+        if w and w.lower() != "default":
+            uid = f"wallet::{w.lower()}"
+        else:
+            async def _err():
+                yield _sse("error", {"message": "A stable 'user_id' or wallet_address is required."})
+            return StreamingResponse(_err(), media_type="text/event-stream")
+
+    cid = (conversation_id or "").strip() or "default"
+    wallet = wallet_address.strip() if wallet_address else None
+    if wallet and wallet.lower() == "default":
+        wallet = None
+
+    # --- Process file attachments ---
+    file_attachments: List[Dict[str, Any]] = []
+
+    for f in files:
+        content = await f.read()
+        mime = get_file_mime_type(f.filename or "", f.content_type)
+
+        if is_image(mime):
+            if len(content) > MAX_IMAGE_SIZE:
+                async def _err():
+                    yield _sse("error", {"message": f"Image '{f.filename}' exceeds {MAX_IMAGE_SIZE // (1024*1024)}MB limit."})
+                return StreamingResponse(_err(), media_type="text/event-stream")
+            encoded = encode_image_for_gemini(content, mime)
+            file_attachments.append({
+                "type": "image",
+                "filename": f.filename,
+                "mime_type": mime,
+                "data": encoded["data"],
+            })
+        elif is_document(mime):
+            if len(content) > MAX_DOCUMENT_SIZE:
+                async def _err():
+                    yield _sse("error", {"message": f"Document '{f.filename}' exceeds {MAX_DOCUMENT_SIZE // (1024*1024)}MB limit."})
+                return StreamingResponse(_err(), media_type="text/event-stream")
+            try:
+                text = await asyncio.to_thread(extract_text_from_document, content, mime)
+                logger.info("Extracted %d chars from document %s (%s)", len(text), f.filename, mime)
+            except Exception as exc:
+                logger.exception("Failed to extract text from %s (%s): %s", f.filename, mime, exc)
+                text = ""
+            file_attachments.append({
+                "type": "document",
+                "filename": f.filename,
+                "mime_type": mime,
+                "text": text,
+            })
+        else:
+            async def _err():
+                yield _sse("error", {"message": f"Unsupported file type: {f.filename} ({mime or 'unknown'})"})
+            return StreamingResponse(_err(), media_type="text/event-stream")
+
+    # --- Session setup + persist user message ---
+    await asyncio.to_thread(
+        chat_manager_instance.ensure_session,
+        uid, cid, wallet_address=wallet,
+    )
+
+    user_msg = ChatMessage(
+        role="user",
+        content=message,
+        metadata={"source": "miniapp-chat", "has_attachments": True, "attachment_count": len(file_attachments)},
+    )
+    await asyncio.to_thread(
+        chat_manager_instance.add_message, user_msg.dict(), cid, uid,
+    )
+
+    conversation_messages = await asyncio.to_thread(
+        chat_manager_instance.get_messages, cid, uid,
+    )
+
+    initial_state: Dict[str, Any] = {
+        "messages": conversation_messages,
+        "user_id": uid,
+        "conversation_id": cid,
+        "wallet_address": wallet,
+        "response_mode": response_mode,
+        "file_attachments": file_attachments,
+    }
+
+    return _streaming_response(initial_state, uid, cid, response_mode)
 
 
 # Supported audio MIME types

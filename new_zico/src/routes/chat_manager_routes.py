@@ -1,6 +1,7 @@
 import logging
-from fastapi import APIRouter, Query, Body
+from fastapi import APIRouter, Query, Body, HTTPException
 from src.service.chat_manager import chat_manager_instance
+from src.agents.config import Config
 from typing import Optional
 from pydantic import BaseModel
 from typing import Dict
@@ -8,6 +9,12 @@ from typing import Dict
 logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/chat", tags=["chat"])
+
+_TITLE_PROMPT = (
+    "Summarize the following user message into a short chat title (3 to 8 words). "
+    "Return ONLY the title text, nothing else. No quotes, no punctuation at the end.\n\n"
+    "User message: {message}"
+)
 
 class UserIdRequest(BaseModel):
     user_id: str
@@ -32,14 +39,15 @@ async def get_conversations(
     user_id_query: str = Query(default=None, alias="user_id"),
     user_id_str: Optional[str] = Body(default=None)
 ):
-    """Get all conversation IDs for a specific user"""
+    """Get all conversations (with titles) for a specific user"""
     user_id = user_id_str if user_id_str else user_id_query
 
     if not user_id:
         user_id = "anonymous"
-        
-    logger.info(f"Getting all conversation IDs for user {user_id}")
-    return {"conversation_ids": chat_manager_instance.get_all_conversation_ids(user_id)}
+
+    logger.info(f"Getting all conversations for user {user_id}")
+    conversations = chat_manager_instance.get_conversations(user_id)
+    return {"conversations": conversations}
 
 
 @router.get("/users")
@@ -85,3 +93,47 @@ async def delete_conversation(
     logger.info(f"Deleting conversation {conversation_id} for user {user_id}")
     chat_manager_instance.delete_conversation(conversation_id, user_id)
     return {"response": "successfully deleted conversation"}
+
+
+class GenerateTitleRequest(BaseModel):
+    user_id: str
+    conversation_id: str
+    message: str
+
+
+@router.post("/generate-title")
+async def generate_title(body: GenerateTitleRequest):
+    """Use a lightweight LLM call to generate a short title from the first user message."""
+    if not body.message.strip():
+        raise HTTPException(status_code=400, detail="message is required")
+
+    try:
+        llm = Config.get_llm(model="gemini-2.0-flash", temperature=0.3, with_cost_tracking=False)
+        prompt = _TITLE_PROMPT.format(message=body.message[:500])
+        result = llm.invoke(prompt)
+        title = (result.content if hasattr(result, "content") else str(result)).strip().strip('"\'')
+        # Enforce 8-word max
+        words = title.split()
+        if len(words) > 8:
+            title = " ".join(words[:8])
+        if not title:
+            title = body.message[:50]
+    except Exception as exc:
+        logger.warning("LLM title generation failed, falling back to truncation: %s", exc)
+        title = (body.message[:47] + "...") if len(body.message) > 50 else body.message
+
+    try:
+        logger.info(
+            "Persisting AI title for user=%s conversation=%s title=%r",
+            body.user_id, body.conversation_id, title,
+        )
+        chat_manager_instance.update_conversation_title(
+            body.conversation_id,
+            body.user_id,
+            title=title,
+        )
+        logger.info("AI title persisted successfully")
+    except Exception as exc:
+        logger.warning("Failed to persist generated title: %s", exc, exc_info=True)
+
+    return {"title": title}

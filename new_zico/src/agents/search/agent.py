@@ -2,6 +2,7 @@ import logging
 from langgraph.prebuilt import create_react_agent
 
 from src.agents.search.tools import get_tools
+from src.agents.portfolio.tools import get_user_portfolio_tool
 from src.agents.markdown_instructions import MARKDOWN_INSTRUCTIONS
 
 logger = logging.getLogger(__name__)
@@ -16,6 +17,10 @@ Rules:
 - Cite sources when presenting specific claims or data points.
 - Summarize findings clearly and concisely, highlighting the most relevant information first.
 - If search results are inconclusive, say so and suggest alternative search terms.
+
+Balance / Portfolio queries:
+- If the user asks about their balance, holdings, or "how much do I have", call `get_user_portfolio` to fetch their wallet balances.
+- Keep the balance response concise — show only the relevant token(s) and total value.
 {MARKDOWN_INSTRUCTIONS}"""
 
 
@@ -29,7 +34,7 @@ class SearchAgent:
             logger.warning("Search agent initialised without tools; it will act as a plain LLM.")
         self.agent = create_react_agent(
             model=llm,
-            tools=tools,
+            tools=tools + [get_user_portfolio_tool],
             name="search_agent",
             prompt=SEARCH_SYSTEM_PROMPT,
         )

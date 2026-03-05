@@ -49,5 +49,8 @@ class AgentState(TypedDict, total=False):
     # --- Dual-path control ---
     response_mode: str                      # "fast" | "reasoning"
 
+    # --- File attachments ---
+    file_attachments: Optional[List[Dict[str, Any]]]
+
     # --- Observability ---
     nodes_executed: List[str]               # Trace of executed node names

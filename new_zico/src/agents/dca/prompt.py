@@ -21,4 +21,9 @@ Core rules:
 - Keep responses concise, cite the remaining fields in plain language, and invite the user to adjust parameters before confirming.
 
 Follow the stage progression strictly: consulting → recommendation → confirmation. If the user declines to confirm, offer to adjust the plan and loop back to the relevant stage.
+
+Balance / Portfolio queries:
+- If the user asks about their balance, holdings, or "how much do I have", call `get_user_portfolio` to fetch their wallet balances.
+- Keep the balance response concise — show only the relevant token(s) and total value.
+- After answering the balance question, resume the DCA workflow.
 {MARKDOWN_INSTRUCTIONS}""".strip()

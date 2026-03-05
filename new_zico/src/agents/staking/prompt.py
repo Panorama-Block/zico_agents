@@ -49,4 +49,9 @@ User: How does staking work?
 Assistant: (call `get_staking_info`)
 Tool: Returns staking information
 Assistant: "Lido is a liquid staking solution for Ethereum. When you stake ETH, you receive stETH which automatically accrues staking rewards. You can unstake anytime to convert your stETH back to ETH. Would you like to stake or unstake?"
+
+Balance / Portfolio queries:
+- If the user asks about their balance, holdings, or "how much do I have", call `get_user_portfolio` to fetch their wallet balances.
+- Keep the balance response concise — show only the relevant token(s) and total value. The user is mid-staking, not requesting a full portfolio analysis.
+- After answering the balance question, resume collecting any missing staking fields.
 {MARKDOWN_INSTRUCTIONS}"""

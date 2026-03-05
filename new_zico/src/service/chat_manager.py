@@ -134,6 +134,22 @@ class ChatManager:
             conversation_id,
         )
 
+    def update_conversation_title(
+        self,
+        conversation_id: str,
+        user_id: Optional[str] = None,
+        *,
+        title: str,
+    ) -> None:
+        conversation_id, user_id = self._resolve_ids(conversation_id, user_id)
+        self._store.update_conversation_title(user_id, conversation_id, title)
+        logger.info(
+            "Updated title for user=%s conversation=%s title=%r",
+            user_id,
+            conversation_id,
+            title,
+        )
+
     def create_conversation(self, user_id: Optional[str] = None) -> str:
         user_id = (user_id or "anonymous")
         conversation_id = f"conversation-{uuid.uuid4().hex[:8]}"
@@ -146,6 +162,10 @@ class ChatManager:
         return conversation_id
 
     # ---- Discovery helpers ------------------------------------------------
+    def get_conversations(self, user_id: Optional[str] = None) -> List[Dict]:
+        user_id = (user_id or "anonymous")
+        return self._store.list_conversations(user_id)
+
     def get_all_conversation_ids(self, user_id: Optional[str] = None) -> List[str]:
         user_id = (user_id or "anonymous")
         conversations = self._store.list_conversations(user_id)

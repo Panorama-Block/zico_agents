@@ -214,6 +214,46 @@ def entry_node(state: AgentState) -> dict:
         for s in (swap_state, lending_state, staking_state, dca_state)
     )
 
+    # Inject file attachments as multimodal content blocks into the last HumanMessage
+    file_attachments = state.get("file_attachments")
+    if file_attachments:
+        for i in range(len(langchain_messages) - 1, -1, -1):
+            if isinstance(langchain_messages[i], HumanMessage):
+                original_content = langchain_messages[i].content
+                # Ensure original_text is a string (content could already be a list)
+                if isinstance(original_content, str):
+                    original_text = original_content
+                elif isinstance(original_content, list):
+                    original_text = " ".join(
+                        p.get("text", "") if isinstance(p, dict) else str(p)
+                        for p in original_content
+                    )
+                else:
+                    original_text = str(original_content)
+
+                content_blocks: List[Dict[str, Any]] = [{"type": "text", "text": original_text}]
+                for att in file_attachments:
+                    if att["type"] == "image":
+                        content_blocks.append({
+                            "type": "media",
+                            "data": att["data"],
+                            "mime_type": att["mime_type"],
+                        })
+                    elif att["type"] == "document":
+                        doc_text = att.get("text") or ""
+                        if doc_text.strip():
+                            content_blocks.append({
+                                "type": "text",
+                                "text": f"\n\n--- Document: {att['filename']} ---\n{doc_text[:30000]}\n--- End ---",
+                            })
+                        else:
+                            content_blocks.append({
+                                "type": "text",
+                                "text": f"\n\n[Document attached: {att['filename']} — text extraction failed or document is empty]",
+                            })
+                langchain_messages[i] = HumanMessage(content=content_blocks)
+                break
+
     return {
         "windowed_messages": windowed,
         "langchain_messages": langchain_messages,
@@ -436,9 +476,12 @@ def _invoke_defi_agent(
 
     scoped_messages.extend(langchain_messages)
 
+    wallet_address = state.get("wallet_address")
+
     try:
         with session_ctx(user_id=user_id, conversation_id=conversation_id):
-            response = agent.invoke({"messages": scoped_messages}, config=config)
+            with portfolio_session(user_id=user_id, conversation_id=conversation_id, wallet_address=wallet_address):
+                response = agent.invoke({"messages": scoped_messages}, config=config)
     except Exception:
         logger.exception("Error invoking %s", agent_key)
         return {
@@ -542,9 +585,10 @@ def dca_agent_node(state: AgentState, config: RunnableConfig | None = None) -> d
 
 
 def _invoke_simple_agent(agent_key: str, state: AgentState, config: RunnableConfig | None = None) -> dict:
-    """Shared logic for invoking a non-DeFi agent (no session scoping)."""
+    """Shared logic for invoking a non-DeFi agent with portfolio session scoping."""
     user_id = state.get("user_id")
     conversation_id = state.get("conversation_id")
+    wallet_address = state.get("wallet_address")
     response_mode = state.get("response_mode", "fast")
     langchain_messages = list(state.get("langchain_messages", []))
     nodes = list(state.get("nodes_executed", []))
@@ -568,7 +612,8 @@ def _invoke_simple_agent(agent_key: str, state: AgentState, config: RunnableConf
         invoke_messages = langchain_messages
 
     try:
-        response = agent.invoke({"messages": invoke_messages}, config=config)
+        with portfolio_session(user_id=user_id, conversation_id=conversation_id, wallet_address=wallet_address):
+            response = agent.invoke({"messages": invoke_messages}, config=config)
     except Exception:
         logger.exception("Error invoking %s", agent_key)
         return {

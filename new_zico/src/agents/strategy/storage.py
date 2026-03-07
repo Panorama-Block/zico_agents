@@ -1,9 +1,10 @@
-"""Gateway-backed storage for lending intents with local fallback."""
+"""State management for strategy intents with optional Panorama gateway persistence."""
+
 from __future__ import annotations
 
 import copy
-import time
 import logging
+import time
 from datetime import datetime, timezone
 from threading import Lock
 from typing import Any, Dict, List, Optional
@@ -16,8 +17,8 @@ from src.integrations.panorama_gateway import (
 )
 
 SHARED_STATE_ENTITY = "agent-shared-states"
-LENDING_HISTORY_ENTITY = "lending-histories"
-LENDING_AGENT_NAME = "lending_agent"
+STRATEGY_HISTORY_ENTITY = "strategy-histories"
+STRATEGY_AGENT_NAME = "strategy_agent"
 
 
 def _utc_now_iso() -> str:
@@ -28,19 +29,10 @@ def _identifier(user_id: str, conversation_id: str) -> str:
     return f"{user_id}:{conversation_id}"
 
 
-def _as_float(value: Any) -> Optional[float]:
-    if value is None:
-        return None
-    try:
-        return float(value)
-    except (TypeError, ValueError):
-        return None
+class StrategyStateRepository:
+    """Stores strategy agent state via Panorama gateway with local fallback."""
 
-
-class LendingStateRepository:
-    """Stores lending agent state via Panorama's gateway or an in-memory fallback."""
-
-    _instance: "LendingStateRepository" | None = None
+    _instance: "StrategyStateRepository" | None = None
     _instance_lock: Lock = Lock()
 
     def __init__(
@@ -59,7 +51,6 @@ class LendingStateRepository:
             self._client = client or PanoramaGatewayClient(self._settings)
             self._use_gateway = True
         except ValueError:
-            # PANORAMA_GATEWAY_URL or JWT secrets not configured – fall back to local store.
             self._settings = None
             self._client = None
             self._use_gateway = False
@@ -73,7 +64,7 @@ class LendingStateRepository:
         return self._settings.tenant_id if self._settings else "tenant-agent"
 
     def _session_identifier(self, user_id: str, conversation_id: str) -> str:
-        return f"{LENDING_AGENT_NAME}:{user_id}:{conversation_id}"
+        return f"{STRATEGY_AGENT_NAME}:{user_id}:{conversation_id}"
 
     @staticmethod
     def _is_unknown_entity_error(exc: PanoramaGatewayError, entity: str) -> bool:
@@ -90,36 +81,37 @@ class LendingStateRepository:
         if not self._history_warning_emitted:
             self._history_warning_emitted = True
             self._logger.warning(
-                "Panorama gateway does not support '%s'; lending history will use local fallback.",
-                LENDING_HISTORY_ENTITY,
+                "Panorama gateway does not support '%s'; strategy history will use local fallback.",
+                STRATEGY_HISTORY_ENTITY,
             )
 
     def _fallback_to_local_store(self) -> None:
         if self._use_gateway:
-            self._logger.warning("Panorama gateway unavailable for lending state; switching to in-memory fallback.")
+            self._logger.warning("Panorama gateway unavailable for strategy state; switching to in-memory fallback.")
         self._use_gateway = False
         self._init_local_store()
 
     def _handle_gateway_failure(self, exc: PanoramaGatewayError) -> None:
         self._logger.warning(
-            "Panorama gateway error (%s) for lending repository: %s",
+            "Panorama gateway error (%s) for strategy repository: %s",
             getattr(exc, "status_code", "unknown"),
             getattr(exc, "payload", exc),
         )
         self._fallback_to_local_store()
 
     def _get_local_history(self, user_id: str, conversation_id: str, limit: Optional[int] = None) -> List[Dict[str, Any]]:
-        key = _identifier(user_id, conversation_id)
-        history = self._state["history"].get(key, [])
-        effective = limit or self._history_limit
-        result: List[Dict[str, Any]] = []
-        for item in sorted(history, key=lambda entry: entry.get("timestamp", 0), reverse=True)[:effective]:
-            entry = copy.deepcopy(item)
-            ts = entry.get("timestamp")
+        self._init_local_store()
+        history = self._state["history"].get(_identifier(user_id, conversation_id), [])
+        if not history:
+            return []
+        records = copy.deepcopy(history)
+        if limit:
+            records = records[-limit:]
+        for record in records:
+            ts = record.get("timestamp")
             if ts is not None:
-                entry["timestamp"] = datetime.fromtimestamp(float(ts), tz=timezone.utc).isoformat()
-            result.append(entry)
-        return result
+                record["timestamp"] = datetime.fromtimestamp(float(ts), tz=timezone.utc).isoformat()
+        return records
 
     def _append_local_history(self, user_id: str, conversation_id: str, summary: Dict[str, Any]) -> None:
         key = _identifier(user_id, conversation_id)
@@ -129,9 +121,8 @@ class LendingStateRepository:
         history.append(item)
         self._state["history"][key] = history[-self._history_limit :]
 
-    # ---- Singleton helpers -----------------------------------------------
     @classmethod
-    def instance(cls) -> "LendingStateRepository":
+    def instance(cls) -> "StrategyStateRepository":
         if cls._instance is None:
             with cls._instance_lock:
                 if cls._instance is None:
@@ -143,7 +134,6 @@ class LendingStateRepository:
         with cls._instance_lock:
             cls._instance = None
 
-    # ---- Core API ---------------------------------------------------------
     def load_intent(self, user_id: str, conversation_id: str) -> Optional[Dict[str, Any]]:
         if not self._use_gateway:
             self._init_local_store()
@@ -203,12 +193,7 @@ class LendingStateRepository:
             self._handle_gateway_failure(exc)
             return self.persist_intent(user_id, conversation_id, intent, metadata, done, summary)
 
-    def set_metadata(
-        self,
-        user_id: str,
-        conversation_id: str,
-        metadata: Dict[str, Any],
-    ) -> None:
+    def set_metadata(self, user_id: str, conversation_id: str, metadata: Dict[str, Any]) -> None:
         if not self._use_gateway:
             self._init_local_store()
             key = _identifier(user_id, conversation_id)
@@ -224,7 +209,6 @@ class LendingStateRepository:
             if not metadata:
                 self._delete_session(user_id, conversation_id)
                 return
-
             session = self._get_session(user_id, conversation_id)
             if not self._use_gateway:
                 return self.set_metadata(user_id, conversation_id, metadata)
@@ -241,8 +225,9 @@ class LendingStateRepository:
     def clear_intent(self, user_id: str, conversation_id: str) -> None:
         if not self._use_gateway:
             self._init_local_store()
-            self._state["intents"].pop(_identifier(user_id, conversation_id), None)
-            self._state["metadata"].pop(_identifier(user_id, conversation_id), None)
+            key = _identifier(user_id, conversation_id)
+            self._state["intents"].pop(key, None)
+            self._state["metadata"].pop(key, None)
             return
         try:
             self._delete_session(user_id, conversation_id)
@@ -272,6 +257,7 @@ class LendingStateRepository:
         metadata: Dict[str, Any] = {
             "event": session.get("event"),
             "status": session.get("status"),
+            "stage": session.get("stage"),
             "missing_fields": session.get("missingFields") or [],
             "next_field": session.get("nextField"),
             "pending_question": session.get("pendingQuestion"),
@@ -280,10 +266,7 @@ class LendingStateRepository:
             "user_id": user_id,
             "conversation_id": conversation_id,
         }
-        metadata["action"] = intent.get("action")
-        metadata["network"] = intent.get("network")
-        metadata["asset"] = intent.get("asset")
-        metadata["amount"] = intent.get("amount")
+        metadata.update(intent)
 
         history = self.get_history(user_id, conversation_id)
         if history:
@@ -292,7 +275,6 @@ class LendingStateRepository:
         updated_at = session.get("updatedAt")
         if updated_at:
             metadata["updated_at"] = updated_at
-
         return metadata
 
     def get_history(
@@ -309,7 +291,7 @@ class LendingStateRepository:
             return self._get_local_history(user_id, conversation_id, limit)
         try:
             result = self._client.list(
-                LENDING_HISTORY_ENTITY,
+                STRATEGY_HISTORY_ENTITY,
                 {
                     "where": {"userId": user_id, "conversationId": conversation_id},
                     "orderBy": {"recordedAt": "desc"},
@@ -319,33 +301,44 @@ class LendingStateRepository:
         except PanoramaGatewayError as exc:
             if exc.status_code == 404:
                 return []
-            if self._is_unknown_entity_error(exc, LENDING_HISTORY_ENTITY):
+            if self._is_unknown_entity_error(exc, STRATEGY_HISTORY_ENTITY):
                 self._disable_remote_history()
                 return self._get_local_history(user_id, conversation_id, limit)
             self._handle_gateway_failure(exc)
             return self.get_history(user_id, conversation_id, limit)
         except ValueError:
-            self._logger.warning("Invalid lending history response from gateway; falling back to local store.")
+            self._logger.warning("Invalid strategy history response from gateway; falling back to local store.")
             self._fallback_to_local_store()
             return self.get_history(user_id, conversation_id, limit)
+
         data = result.get("data", []) if isinstance(result, dict) else []
         history: List[Dict[str, Any]] = []
         for entry in data:
+            payload = entry.get("metadata") or {}
             history.append(
                 {
-                    "status": entry.get("status"),
-                    "action": entry.get("action"),
-                    "network": entry.get("network"),
-                    "asset": entry.get("asset"),
-                    "amount": entry.get("amount"),
-                    "error": entry.get("errorMessage"),
                     "timestamp": entry.get("recordedAt"),
+                    "summary": entry.get("summary") or payload.get("summary"),
+                    "metadata": payload,
                 }
             )
         return history
 
-    # ---- Gateway helpers --------------------------------------------------
-    def _get_session(self, user_id: str, conversation_id: str) -> Optional[Dict[str, Any]]:
+    def _session_payload(self, intent: Dict[str, Any], metadata: Dict[str, Any]) -> Dict[str, Any]:
+        return {
+            "intent": intent,
+            "event": metadata.get("event"),
+            "status": metadata.get("status"),
+            "stage": metadata.get("stage"),
+            "missingFields": metadata.get("missing_fields") or [],
+            "nextField": metadata.get("next_field"),
+            "pendingQuestion": metadata.get("pending_question"),
+            "choices": metadata.get("choices") or [],
+            "errorMessage": metadata.get("error"),
+            "updatedAt": metadata.get("updated_at") or _utc_now_iso(),
+        }
+
+    def _get_session(self, user_id: str, conversation_id: str) -> Dict[str, Any] | None:
         identifier = self._session_identifier(user_id, conversation_id)
         try:
             record = self._client.get(SHARED_STATE_ENTITY, identifier)
@@ -357,6 +350,28 @@ class LendingStateRepository:
             self._handle_gateway_failure(exc)
             return None
 
+    def _upsert_session(self, user_id: str, conversation_id: str, payload: Dict[str, Any]) -> None:
+        identifier = self._session_identifier(user_id, conversation_id)
+        record = {"state": payload, "updatedAt": _utc_now_iso()}
+        try:
+            self._client.update(SHARED_STATE_ENTITY, identifier, record)
+        except PanoramaGatewayError as exc:
+            if exc.status_code != 404:
+                raise
+            create_payload = {
+                "agentName": STRATEGY_AGENT_NAME,
+                "userId": user_id,
+                "conversationId": conversation_id,
+                "tenantId": self._tenant_id(),
+                **record,
+            }
+            try:
+                self._client.create(SHARED_STATE_ENTITY, create_payload)
+            except PanoramaGatewayError as create_exc:
+                if create_exc.status_code == 409:
+                    return
+                raise
+
     def _delete_session(self, user_id: str, conversation_id: str) -> None:
         identifier = self._session_identifier(user_id, conversation_id)
         try:
@@ -366,91 +381,23 @@ class LendingStateRepository:
                 self._handle_gateway_failure(exc)
                 raise
 
-    def _upsert_session(
-        self,
-        user_id: str,
-        conversation_id: str,
-        data: Dict[str, Any],
-    ) -> None:
-        identifier = self._session_identifier(user_id, conversation_id)
-        payload = {"state": data, "updatedAt": _utc_now_iso()}
-        try:
-            self._client.update(SHARED_STATE_ENTITY, identifier, payload)
-        except PanoramaGatewayError as exc:
-            if exc.status_code != 404:
-                self._handle_gateway_failure(exc)
-                raise
-            create_payload = {
-                "agentName": LENDING_AGENT_NAME,
-                "userId": user_id,
-                "conversationId": conversation_id,
-                "tenantId": self._tenant_id(),
-                **payload,
-            }
-            try:
-                self._client.create(SHARED_STATE_ENTITY, create_payload)
-            except PanoramaGatewayError as create_exc:
-                if create_exc.status_code == 409:
-                    return
-                if create_exc.status_code == 404:
-                    self._handle_gateway_failure(create_exc)
-                    raise
-                self._handle_gateway_failure(create_exc)
-                raise
-
-    def _create_history_entry(
-        self,
-        user_id: str,
-        conversation_id: str,
-        summary: Dict[str, Any],
-    ) -> None:
+    def _create_history_entry(self, user_id: str, conversation_id: str, summary: Dict[str, Any]) -> None:
         if not self._remote_history_supported:
             return
-        history_payload = {
+        payload = {
             "userId": user_id,
             "conversationId": conversation_id,
-            "status": summary.get("status"),
-            "action": summary.get("action"),
-            "network": summary.get("network"),
-            "asset": summary.get("asset"),
-            "amount": _as_float(summary.get("amount")),
-            "errorMessage": summary.get("error"),
+            "summary": summary.get("summary"),
+            "metadata": summary,
             "recordedAt": _utc_now_iso(),
             "tenantId": self._tenant_id(),
         }
-        if self._logger.isEnabledFor(logging.DEBUG):
-            self._logger.debug(
-                "Persisting lending history for user=%s conversation=%s payload=%s",
-                user_id,
-                conversation_id,
-                history_payload,
-            )
         try:
-            self._client.create(LENDING_HISTORY_ENTITY, history_payload)
+            self._client.create(STRATEGY_HISTORY_ENTITY, payload)
         except PanoramaGatewayError as exc:
-            if exc.status_code == 404:
-                self._handle_gateway_failure(exc)
-                raise
-            if self._is_unknown_entity_error(exc, LENDING_HISTORY_ENTITY):
+            if exc.status_code == 409:
+                return
+            if self._is_unknown_entity_error(exc, STRATEGY_HISTORY_ENTITY):
                 self._disable_remote_history()
                 return
-            elif exc.status_code != 409:
-                self._handle_gateway_failure(exc)
-                raise
-
-    @staticmethod
-    def _session_payload(intent: Dict[str, Any], metadata: Dict[str, Any]) -> Dict[str, Any]:
-        missing = metadata.get("missing_fields") or []
-        if not isinstance(missing, list):
-            missing = list(missing)
-        return {
-            "status": metadata.get("status"),
-            "event": metadata.get("event"),
-            "intent": intent,
-            "missingFields": missing,
-            "nextField": metadata.get("next_field"),
-            "pendingQuestion": metadata.get("pending_question"),
-            "choices": metadata.get("choices"),
-            "errorMessage": metadata.get("error"),
-            "historyCursor": metadata.get("history_cursor") or 0,
-        }
+            raise

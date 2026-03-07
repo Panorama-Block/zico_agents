@@ -20,6 +20,7 @@ from src.graphs.nodes import (
     lending_agent_node,
     staking_agent_node,
     dca_agent_node,
+    strategy_agent_node,
     crypto_agent_node,
     search_agent_node,
     default_agent_node,
@@ -37,6 +38,7 @@ _AGENT_NODES = [
     "lending_agent_node",
     "staking_agent_node",
     "dca_agent_node",
+    "strategy_agent_node",
     "crypto_agent_node",
     "search_agent_node",
     "default_agent_node",
@@ -68,6 +70,7 @@ def build_graph() -> StateGraph:
     graph.add_node("lending_agent_node", lending_agent_node)
     graph.add_node("staking_agent_node", staking_agent_node)
     graph.add_node("dca_agent_node", dca_agent_node)
+    graph.add_node("strategy_agent_node", strategy_agent_node)
     graph.add_node("crypto_agent_node", crypto_agent_node)
     graph.add_node("search_agent_node", search_agent_node)
     graph.add_node("default_agent_node", default_agent_node)
@@ -91,6 +94,7 @@ def build_graph() -> StateGraph:
             "lending_agent_node": "lending_agent_node",
             "staking_agent_node": "staking_agent_node",
             "dca_agent_node": "dca_agent_node",
+            "strategy_agent_node": "strategy_agent_node",
             "crypto_agent_node": "crypto_agent_node",
             "search_agent_node": "search_agent_node",
             "default_agent_node": "default_agent_node",
@@ -108,6 +112,7 @@ def build_graph() -> StateGraph:
             "lending_agent_node": "lending_agent_node",
             "staking_agent_node": "staking_agent_node",
             "dca_agent_node": "dca_agent_node",
+            "strategy_agent_node": "strategy_agent_node",
             "crypto_agent_node": "crypto_agent_node",
             "search_agent_node": "search_agent_node",
             "default_agent_node": "default_agent_node",

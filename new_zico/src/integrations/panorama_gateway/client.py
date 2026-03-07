@@ -119,13 +119,21 @@ class PanoramaGatewayClient:
                 self._truncate_payload(json_body),
             )
 
-        response = self._client.request(
-            method=method,
-            url=path,
-            headers=headers,
-            params=params,
-            json=json_body,
-        )
+        # map network/transient failures to gateway errors so callers can degrade gracefully
+        try:
+            response = self._client.request(
+                method=method,
+                url=path,
+                headers=headers,
+                params=params,
+                json=json_body,
+            )
+        except httpx.TimeoutException as exc:
+            logger.warning("Panorama timeout %s %s: %s", method, path, exc)
+            raise PanoramaGatewayError("Gateway request timed out", 504, str(exc)) from exc
+        except httpx.RequestError as exc:
+            logger.warning("Panorama network error %s %s: %s", method, path, exc)
+            raise PanoramaGatewayError("Gateway request failed", 503, str(exc)) from exc
 
         if response.status_code >= 400:
             message = f"Gateway request failed ({response.status_code})"

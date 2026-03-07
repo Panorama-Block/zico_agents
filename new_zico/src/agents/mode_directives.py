@@ -92,6 +92,15 @@ For balance queries: show the relevant token plus its share of the portfolio.\
 - Confirmation stage: full summary with projection (total invested, fee estimate).\
 """,
 
+    "strategy_agent": """\
+## Deep Reasoning — Strategy Planning
+- Evaluate risk fit, capital fit, liquidity confidence, and protocol risk penalties.
+- Provide side-by-side comparisons with explicit assumptions.
+- Include 30/90/180 day simulation with stress scenarios.
+- Gate high and very-high risk recommendations unless explicit opt-in is confirmed.
+- Output handoff-ready payload fields and unresolved items clearly.\
+""",
+
     "portfolio_advisor": """\
 ## Deep Reasoning — Portfolio Analysis
 Follow the full analysis structure:

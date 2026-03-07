@@ -159,6 +159,7 @@ KNOWN_AGENT_NAMES = {
     "dca_agent",
     "lending_agent",
     "staking_agent",
+    "strategy_agent",
     "search_agent",
     "default_agent",
 }
@@ -263,6 +264,13 @@ def build_metadata(
             lambda: metadata.get_staking_history(user_id=user_id, conversation_id=conversation_id),
         )
 
+    if agent_name == "strategy_agent":
+        strategy_meta = metadata.get_strategy_agent(user_id=user_id, conversation_id=conversation_id)
+        return _with_history(
+            strategy_meta,
+            lambda: metadata.get_strategy_history(user_id=user_id, conversation_id=conversation_id),
+        )
+
     if agent_name == "crypto_agent":
         tool_meta = _collect_tool_metadata(messages_out)
         if tool_meta:
@@ -346,6 +354,14 @@ def build_defi_guidance(intent_type: str, defi_state: Optional[dict]) -> Optiona
         parts = [
             "There is an in-progress staking intent for this conversation.",
             "Keep routing messages to the staking_agent until the intent is complete unless the user explicitly cancels or changes topic.",
+        ]
+    elif intent_type == "strategy":
+        in_progress_statuses = {"profiling", "discovery", "recommendation", "comparison", "confirmation"}
+        if status not in in_progress_statuses:
+            return None
+        parts = [
+            "There is an in-progress strategy planning session for this conversation.",
+            "Keep routing messages to the strategy_agent until the workflow is confirmed or the user cancels.",
         ]
     else:
         return None

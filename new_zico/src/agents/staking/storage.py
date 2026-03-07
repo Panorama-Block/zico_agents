@@ -15,8 +15,9 @@ from src.integrations.panorama_gateway import (
     get_panorama_settings,
 )
 
-STAKING_SESSION_ENTITY = "staking-sessions"
+SHARED_STATE_ENTITY = "agent-shared-states"
 STAKING_HISTORY_ENTITY = "staking-histories"
+STAKING_AGENT_NAME = "staking_agent"
 
 
 def _utc_now_iso() -> str:
@@ -51,6 +52,8 @@ class StakingStateRepository:
     ) -> None:
         self._logger = logging.getLogger(__name__)
         self._history_limit = history_limit
+        self._remote_history_supported = True
+        self._history_warning_emitted = False
         try:
             self._settings = settings or get_panorama_settings()
             self._client = client or PanoramaGatewayClient(self._settings)
@@ -69,6 +72,28 @@ class StakingStateRepository:
     def _tenant_id(self) -> str:
         return self._settings.tenant_id if self._settings else "tenant-agent"
 
+    def _session_identifier(self, user_id: str, conversation_id: str) -> str:
+        return f"{STAKING_AGENT_NAME}:{user_id}:{conversation_id}"
+
+    @staticmethod
+    def _is_unknown_entity_error(exc: PanoramaGatewayError, entity: str) -> bool:
+        if exc.status_code != 400:
+            return False
+        payload = getattr(exc, "payload", None)
+        if isinstance(payload, dict):
+            message = str(payload.get("message") or "").lower()
+            return f"unknown entity: {entity}".lower() in message or f"unknown entity {entity}".lower() in message
+        return False
+
+    def _disable_remote_history(self) -> None:
+        self._remote_history_supported = False
+        if not self._history_warning_emitted:
+            self._history_warning_emitted = True
+            self._logger.warning(
+                "Panorama gateway does not support '%s'; staking history will use local fallback.",
+                STAKING_HISTORY_ENTITY,
+            )
+
     def _fallback_to_local_store(self) -> None:
         if self._use_gateway:
             self._logger.warning("Panorama gateway unavailable for staking state; switching to in-memory fallback.")
@@ -82,6 +107,27 @@ class StakingStateRepository:
             getattr(exc, "payload", exc),
         )
         self._fallback_to_local_store()
+
+    def _get_local_history(self, user_id: str, conversation_id: str, limit: Optional[int] = None) -> List[Dict[str, Any]]:
+        key = _identifier(user_id, conversation_id)
+        history = self._state["history"].get(key, [])
+        effective = limit or self._history_limit
+        result: List[Dict[str, Any]] = []
+        for item in sorted(history, key=lambda entry: entry.get("timestamp", 0), reverse=True)[:effective]:
+            entry = copy.deepcopy(item)
+            ts = entry.get("timestamp")
+            if ts is not None:
+                entry["timestamp"] = datetime.fromtimestamp(float(ts), tz=timezone.utc).isoformat()
+            result.append(entry)
+        return result
+
+    def _append_local_history(self, user_id: str, conversation_id: str, summary: Dict[str, Any]) -> None:
+        key = _identifier(user_id, conversation_id)
+        history = self._state["history"].setdefault(key, [])
+        item = copy.deepcopy(summary)
+        item.setdefault("timestamp", time.time())
+        history.append(item)
+        self._state["history"][key] = history[-self._history_limit:]
 
     # ---- Singleton helpers -----------------------------------------------
     @classmethod
@@ -146,6 +192,8 @@ class StakingStateRepository:
             if done:
                 if summary:
                     self._create_history_entry(user_id, conversation_id, summary)
+                    if not self._remote_history_supported:
+                        self._append_local_history(user_id, conversation_id, summary)
                 self._delete_session(user_id, conversation_id)
             else:
                 payload = self._session_payload(intent, metadata)
@@ -256,19 +304,11 @@ class StakingStateRepository:
         limit: Optional[int] = None,
     ) -> List[Dict[str, Any]]:
         if not self._use_gateway:
-            key = _identifier(user_id, conversation_id)
-            history = self._state["history"].get(key, [])
-            effective = limit or self._history_limit
-            result: List[Dict[str, Any]] = []
-            for item in sorted(history, key=lambda entry: entry.get("timestamp", 0), reverse=True)[:effective]:
-                entry = copy.deepcopy(item)
-                ts = entry.get("timestamp")
-                if ts is not None:
-                    entry["timestamp"] = datetime.fromtimestamp(float(ts), tz=timezone.utc).isoformat()
-                result.append(entry)
-            return result
+            return self._get_local_history(user_id, conversation_id, limit)
 
         effective_limit = limit or self._history_limit
+        if not self._remote_history_supported:
+            return self._get_local_history(user_id, conversation_id, limit)
         try:
             result = self._client.list(
                 STAKING_HISTORY_ENTITY,
@@ -281,6 +321,9 @@ class StakingStateRepository:
         except PanoramaGatewayError as exc:
             if exc.status_code == 404:
                 return []
+            if self._is_unknown_entity_error(exc, STAKING_HISTORY_ENTITY):
+                self._disable_remote_history()
+                return self._get_local_history(user_id, conversation_id, limit)
             self._handle_gateway_failure(exc)
             return self.get_history(user_id, conversation_id, limit)
         except ValueError:
@@ -307,9 +350,11 @@ class StakingStateRepository:
 
     # ---- Gateway helpers --------------------------------------------------
     def _get_session(self, user_id: str, conversation_id: str) -> Optional[Dict[str, Any]]:
-        identifier = _identifier(user_id, conversation_id)
+        identifier = self._session_identifier(user_id, conversation_id)
         try:
-            return self._client.get(STAKING_SESSION_ENTITY, identifier)
+            record = self._client.get(SHARED_STATE_ENTITY, identifier)
+            state = record.get("state") if isinstance(record, dict) else None
+            return state if isinstance(state, dict) else None
         except PanoramaGatewayError as exc:
             if exc.status_code == 404:
                 return None
@@ -317,9 +362,9 @@ class StakingStateRepository:
             return None
 
     def _delete_session(self, user_id: str, conversation_id: str) -> None:
-        identifier = _identifier(user_id, conversation_id)
+        identifier = self._session_identifier(user_id, conversation_id)
         try:
-            self._client.delete(STAKING_SESSION_ENTITY, identifier)
+            self._client.delete(SHARED_STATE_ENTITY, identifier)
         except PanoramaGatewayError as exc:
             if exc.status_code != 404:
                 self._handle_gateway_failure(exc)
@@ -331,22 +376,23 @@ class StakingStateRepository:
         conversation_id: str,
         data: Dict[str, Any],
     ) -> None:
-        identifier = _identifier(user_id, conversation_id)
-        payload = {**data, "updatedAt": _utc_now_iso()}
+        identifier = self._session_identifier(user_id, conversation_id)
+        payload = {"state": data, "updatedAt": _utc_now_iso()}
         try:
-            self._client.update(STAKING_SESSION_ENTITY, identifier, payload)
+            self._client.update(SHARED_STATE_ENTITY, identifier, payload)
         except PanoramaGatewayError as exc:
             if exc.status_code != 404:
                 self._handle_gateway_failure(exc)
                 raise
             create_payload = {
+                "agentName": STAKING_AGENT_NAME,
                 "userId": user_id,
                 "conversationId": conversation_id,
                 "tenantId": self._tenant_id(),
                 **payload,
             }
             try:
-                self._client.create(STAKING_SESSION_ENTITY, create_payload)
+                self._client.create(SHARED_STATE_ENTITY, create_payload)
             except PanoramaGatewayError as create_exc:
                 if create_exc.status_code == 409:
                     return
@@ -362,6 +408,8 @@ class StakingStateRepository:
         conversation_id: str,
         summary: Dict[str, Any],
     ) -> None:
+        if not self._remote_history_supported:
+            return
         history_payload = {
             "userId": user_id,
             "conversationId": conversation_id,
@@ -389,6 +437,9 @@ class StakingStateRepository:
             if exc.status_code == 404:
                 self._handle_gateway_failure(exc)
                 raise
+            if self._is_unknown_entity_error(exc, STAKING_HISTORY_ENTITY):
+                self._disable_remote_history()
+                return
             elif exc.status_code != 409:
                 self._handle_gateway_failure(exc)
                 raise

@@ -6,6 +6,7 @@ from src.agents.swap.storage import SwapStateRepository
 from src.agents.dca.storage import DcaStateRepository
 from src.agents.lending.storage import LendingStateRepository
 from src.agents.staking.storage import StakingStateRepository
+from src.agents.strategy.storage import StrategyStateRepository
 
 
 class Metadata:
@@ -15,6 +16,7 @@ class Metadata:
         self._dca_repo = DcaStateRepository.instance()
         self._lending_repo = LendingStateRepository.instance()
         self._staking_repo = StakingStateRepository.instance()
+        self._strategy_repo = StrategyStateRepository.instance()
 
     def get_crypto_data_agent(self):
         return self.crypto_data_agent
@@ -162,6 +164,43 @@ class Metadata:
     ):
         try:
             return self._staking_repo.get_history(user_id, conversation_id, limit)
+        except ValueError:
+            return []
+
+    def get_strategy_agent(self, user_id: str | None = None, conversation_id: str | None = None):
+        try:
+            return self._strategy_repo.get_metadata(user_id, conversation_id)
+        except ValueError:
+            return {}
+
+    def set_strategy_agent(
+        self,
+        strategy_agent: Dict[str, Any] | None,
+        user_id: str | None = None,
+        conversation_id: str | None = None,
+    ):
+        try:
+            if strategy_agent:
+                self._strategy_repo.set_metadata(user_id, conversation_id, strategy_agent)
+            else:
+                self._strategy_repo.clear_metadata(user_id, conversation_id)
+        except ValueError:
+            return
+
+    def clear_strategy_agent(self, user_id: str | None = None, conversation_id: str | None = None) -> None:
+        try:
+            self._strategy_repo.clear_metadata(user_id, conversation_id)
+        except ValueError:
+            return
+
+    def get_strategy_history(
+        self,
+        user_id: str | None = None,
+        conversation_id: str | None = None,
+        limit: int | None = None,
+    ):
+        try:
+            return self._strategy_repo.get_history(user_id, conversation_id, limit)
         except ValueError:
             return []
 

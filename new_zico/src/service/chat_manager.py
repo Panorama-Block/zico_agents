@@ -30,9 +30,18 @@ class ChatManager:
         user_id: Optional[str] = None,
     ) -> List[Dict[str, str]]:
         conversation_id, user_id = self._resolve_ids(conversation_id, user_id)
-        self._store.ensure_conversation(user_id, conversation_id)
-        messages = self._store.list_messages(user_id, conversation_id)
-        return messages
+        try:
+            self._store.ensure_conversation(user_id, conversation_id)
+            messages = self._store.list_messages(user_id, conversation_id)
+            return messages
+        except Exception as exc:
+            logger.warning(
+                "Failed to fetch messages for user=%s conversation=%s: %s",
+                user_id,
+                conversation_id,
+                exc,
+            )
+            return []
 
     def get_last_message(
         self,
@@ -58,20 +67,29 @@ class ChatManager:
         user_id: Optional[str] = None,
     ) -> Dict[str, str]:
         conversation_id, user_id = self._resolve_ids(conversation_id, user_id)
-        self._store.ensure_user_and_conversation(user_id, conversation_id)
         chat_message = ChatMessage(**message)
         if not chat_message.message_id:
             chat_message.message_id = str(uuid.uuid4())
         chat_message.conversation_id = conversation_id
         chat_message.user_id = user_id
-        stored = self._store.add_message(user_id, conversation_id, chat_message)
-        logger.info(
-            "Persisted message for user=%s conversation=%s role=%s",
-            user_id,
-            conversation_id,
-            chat_message.role,
-        )
-        return stored
+        try:
+            self._store.ensure_user_and_conversation(user_id, conversation_id)
+            stored = self._store.add_message(user_id, conversation_id, chat_message)
+            logger.info(
+                "Persisted message for user=%s conversation=%s role=%s",
+                user_id,
+                conversation_id,
+                chat_message.role,
+            )
+            return stored
+        except Exception as exc:
+            logger.warning(
+                "Failed to persist message for user=%s conversation=%s: %s",
+                user_id,
+                conversation_id,
+                exc,
+            )
+            return chat_message.dict()
 
     def add_response(
         self,
@@ -113,13 +131,21 @@ class ChatManager:
         user_id: Optional[str] = None,
     ) -> None:
         conversation_id, user_id = self._resolve_ids(conversation_id, user_id)
-        self._store.ensure_conversation(user_id, conversation_id)
-        self._store.reset_conversation(user_id, conversation_id)
-        logger.info(
-            "Cleared messages for user=%s conversation=%s",
-            user_id,
-            conversation_id,
-        )
+        try:
+            self._store.ensure_conversation(user_id, conversation_id)
+            self._store.reset_conversation(user_id, conversation_id)
+            logger.info(
+                "Cleared messages for user=%s conversation=%s",
+                user_id,
+                conversation_id,
+            )
+        except Exception as exc:
+            logger.warning(
+                "Failed to clear messages for user=%s conversation=%s: %s",
+                user_id,
+                conversation_id,
+                exc,
+            )
 
     def delete_conversation(
         self,
@@ -127,12 +153,20 @@ class ChatManager:
         user_id: Optional[str] = None,
     ) -> None:
         conversation_id, user_id = self._resolve_ids(conversation_id, user_id)
-        self._store.delete_conversation(user_id, conversation_id)
-        logger.info(
-            "Deleted conversation for user=%s conversation=%s",
-            user_id,
-            conversation_id,
-        )
+        try:
+            self._store.delete_conversation(user_id, conversation_id)
+            logger.info(
+                "Deleted conversation for user=%s conversation=%s",
+                user_id,
+                conversation_id,
+            )
+        except Exception as exc:
+            logger.warning(
+                "Failed to delete conversation for user=%s conversation=%s: %s",
+                user_id,
+                conversation_id,
+                exc,
+            )
 
     def update_conversation_title(
         self,
@@ -153,18 +187,30 @@ class ChatManager:
     def create_conversation(self, user_id: Optional[str] = None) -> str:
         user_id = (user_id or "anonymous")
         conversation_id = f"conversation-{uuid.uuid4().hex[:8]}"
-        self._store.ensure_user_and_conversation(user_id, conversation_id)
-        logger.info(
-            "Created new conversation for user=%s conversation=%s",
-            user_id,
-            conversation_id,
-        )
+        try:
+            self._store.ensure_user_and_conversation(user_id, conversation_id)
+            logger.info(
+                "Created new conversation for user=%s conversation=%s",
+                user_id,
+                conversation_id,
+            )
+        except Exception as exc:
+            logger.warning(
+                "Failed to persist new conversation for user=%s conversation=%s: %s",
+                user_id,
+                conversation_id,
+                exc,
+            )
         return conversation_id
 
     # ---- Discovery helpers ------------------------------------------------
     def get_conversations(self, user_id: Optional[str] = None) -> List[Dict]:
         user_id = (user_id or "anonymous")
-        return self._store.list_conversations(user_id)
+        try:
+            return self._store.list_conversations(user_id)
+        except Exception as exc:
+            logger.warning("Failed to list conversations for user=%s: %s", user_id, exc)
+            return []
 
     def get_all_conversation_ids(self, user_id: Optional[str] = None) -> List[str]:
         user_id = (user_id or "anonymous")
@@ -172,7 +218,11 @@ class ChatManager:
         return [c["id"] for c in conversations if isinstance(c, dict) and c.get("id")]
 
     def get_all_user_ids(self) -> List[str]:
-        return self._store.list_users()
+        try:
+            return self._store.list_users()
+        except Exception as exc:
+            logger.warning("Failed to list users: %s", exc)
+            return []
 
     def ensure_session(
         self,
@@ -182,12 +232,20 @@ class ChatManager:
         wallet_address: Optional[str] = None,
         display_name: Optional[str] = None,
     ) -> None:
-        self._store.ensure_user_and_conversation(
-            user_id,
-            conversation_id,
-            wallet_address=wallet_address,
-            display_name=display_name,
-        )
+        try:
+            self._store.ensure_user_and_conversation(
+                user_id,
+                conversation_id,
+                wallet_address=wallet_address,
+                display_name=display_name,
+            )
+        except Exception as exc:
+            logger.warning(
+                "Failed to ensure session for user=%s conversation=%s: %s",
+                user_id,
+                conversation_id,
+                exc,
+            )
 
     # ---- Cost tracking ----------------------------------------------------
     def update_conversation_costs(

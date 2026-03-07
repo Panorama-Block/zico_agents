@@ -26,6 +26,7 @@ _INTENT_TO_NODE = {
     IntentCategory.LENDING.value: "lending_agent_node",
     IntentCategory.STAKING.value: "staking_agent_node",
     IntentCategory.DCA.value: "dca_agent_node",
+    IntentCategory.STRATEGY.value: "strategy_agent_node",
     IntentCategory.MARKET_DATA.value: "crypto_agent_node",
     IntentCategory.PORTFOLIO.value: "portfolio_advisor_node",
     IntentCategory.SEARCH.value: "search_agent_node",
@@ -38,6 +39,7 @@ _AGENT_NAME_TO_NODE = {
     "lending_agent": "lending_agent_node",
     "staking_agent": "staking_agent_node",
     "dca_agent": "dca_agent_node",
+    "strategy_agent": "strategy_agent_node",
     "crypto_agent": "crypto_agent_node",
     "search_agent": "search_agent_node",
     "default_agent": "default_agent_node",
@@ -51,6 +53,7 @@ _DEFI_STATE_NODE = {
     "lending_state": "lending_agent_node",
     "staking_state": "staking_agent_node",
     "dca_state": "dca_agent_node",
+    "strategy_state": "strategy_agent_node",
 }
 
 # DeFi in-progress statuses
@@ -59,6 +62,7 @@ _DEFI_ACTIVE_STATUSES = {
     "lending_state": {"collecting"},
     "staking_state": {"collecting"},
     "dca_state": {"consulting", "recommendation", "confirmation"},
+    "strategy_state": {"profiling", "discovery", "recommendation", "comparison", "confirmation"},
 }
 
 
@@ -108,7 +112,7 @@ def decide_route(state: AgentState) -> str:
         return node
 
     # 5. DeFi intent + medium confidence + keyword match
-    if confidence >= SemanticRouter.LOW_CONFIDENCE and intent in ("swap", "lending", "staking", "dca"):
+    if confidence >= SemanticRouter.LOW_CONFIDENCE and intent in ("swap", "lending", "staking", "dca", "strategy"):
         # For DeFi, medium confidence + keyword fallback is sufficient
         if intent == "swap":
             if _nodes_mod.is_swap_like_request(
@@ -128,6 +132,9 @@ def decide_route(state: AgentState) -> str:
         if intent == "dca":
             logger.debug("decide_route → dca_agent_node (medium confidence)")
             return "dca_agent_node"
+        if intent == "strategy":
+            logger.debug("decide_route → strategy_agent_node (medium confidence)")
+            return "strategy_agent_node"
 
     # 6. Non-DeFi + medium confidence
     if confidence >= SemanticRouter.LOW_CONFIDENCE and intent:

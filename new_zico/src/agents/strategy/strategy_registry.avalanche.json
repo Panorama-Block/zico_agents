@@ -1,0 +1,985 @@
+[
+  {
+    "strategy_id": "avax_rwa_opentrade_low_v1",
+    "version": "2026-03-06",
+    "name": "RWA Treasury Yield",
+    "risk_profile": "low",
+    "category": "rwa",
+    "protocols": [
+      "OpenTrade"
+    ],
+    "mechanism": "Deposit stablecoins into tokenized U.S. Treasury products.",
+    "yield_source": "Off-chain treasury yield",
+    "risks": [
+      "custodial_structure",
+      "regulatory_exposure"
+    ],
+    "capital_requirements": {
+      "asset": "USDC",
+      "min_usd": 500,
+      "recommended_usd": 5000
+    },
+    "liquidity_constraints": "T+1 redemption windows may apply.",
+    "leverage_profile": "none",
+    "default_alloc_template": {
+      "usdc_pct": 100
+    },
+    "simulation_assumptions": {
+      "base_apy": 0.055,
+      "volatility": 0.01
+    },
+    "handoff_mapping": "none",
+    "enabled": true
+  },
+  {
+    "strategy_id": "avax_rwa_securitize_low_v1",
+    "version": "2026-03-06",
+    "name": "Institutional RWA Allocation",
+    "risk_profile": "low",
+    "category": "rwa",
+    "protocols": [
+      "Securitize"
+    ],
+    "mechanism": "Access tokenized fixed-income products.",
+    "yield_source": "RWA coupons and fixed-income accrual",
+    "risks": [
+      "issuer_risk",
+      "compliance_risk"
+    ],
+    "capital_requirements": {
+      "asset": "USDC",
+      "min_usd": 1000,
+      "recommended_usd": 10000
+    },
+    "liquidity_constraints": "Instrument-specific lockups can apply.",
+    "leverage_profile": "none",
+    "default_alloc_template": {
+      "usdc_pct": 100
+    },
+    "simulation_assumptions": {
+      "base_apy": 0.06,
+      "volatility": 0.015
+    },
+    "handoff_mapping": "none",
+    "enabled": true
+  },
+  {
+    "strategy_id": "avax_rwa_centrifuge_pool_lowmed_v1",
+    "version": "2026-03-06",
+    "name": "Structured RWA Pool",
+    "risk_profile": "medium",
+    "category": "rwa",
+    "protocols": [
+      "Centrifuge Protocol"
+    ],
+    "mechanism": "Fund asset-backed pools.",
+    "yield_source": "Borrower repayments",
+    "risks": [
+      "credit_risk",
+      "pool_concentration"
+    ],
+    "capital_requirements": {
+      "asset": "USDC",
+      "min_usd": 1000,
+      "recommended_usd": 12000
+    },
+    "liquidity_constraints": "Pool windows vary by issuer.",
+    "leverage_profile": "none",
+    "default_alloc_template": {
+      "usdc_pct": 100
+    },
+    "simulation_assumptions": {
+      "base_apy": 0.08,
+      "volatility": 0.03
+    },
+    "handoff_mapping": "lending",
+    "enabled": true
+  },
+  {
+    "strategy_id": "avax_lending_euler_stable_low_v1",
+    "version": "2026-03-06",
+    "name": "Stablecoin Lending Conservative",
+    "risk_profile": "low",
+    "category": "lending",
+    "protocols": [
+      "Euler V2"
+    ],
+    "mechanism": "Deposit USDC to conservative vaults.",
+    "yield_source": "Borrow demand",
+    "risks": [
+      "smart_contract",
+      "liquidation_if_levered"
+    ],
+    "capital_requirements": {
+      "asset": "USDC",
+      "min_usd": 200,
+      "recommended_usd": 5000
+    },
+    "liquidity_constraints": "Vault utilization can reduce withdrawals.",
+    "leverage_profile": "none",
+    "default_alloc_template": {
+      "usdc_pct": 100
+    },
+    "simulation_assumptions": {
+      "base_apy": 0.075,
+      "volatility": 0.04
+    },
+    "handoff_mapping": "lending",
+    "enabled": true
+  },
+  {
+    "strategy_id": "avax_curated_mev_low_v1",
+    "version": "2026-03-06",
+    "name": "Curated Stable Vault",
+    "risk_profile": "low",
+    "category": "curated",
+    "protocols": [
+      "MEV Capital"
+    ],
+    "mechanism": "Deposit into risk-managed vaults.",
+    "yield_source": "Aggregated lending and LP spread",
+    "risks": [
+      "manager_risk"
+    ],
+    "capital_requirements": {
+      "asset": "USDC",
+      "min_usd": 1000,
+      "recommended_usd": 8000
+    },
+    "liquidity_constraints": "Vault withdrawal windows may apply.",
+    "leverage_profile": "low",
+    "default_alloc_template": {
+      "usdc_pct": 100
+    },
+    "simulation_assumptions": {
+      "base_apy": 0.09,
+      "volatility": 0.05
+    },
+    "handoff_mapping": "none",
+    "enabled": true
+  },
+  {
+    "strategy_id": "avax_curated_re7_low_v1",
+    "version": "2026-03-06",
+    "name": "Professional Curator Strategy",
+    "risk_profile": "low",
+    "category": "curated",
+    "protocols": [
+      "Re7 Labs"
+    ],
+    "mechanism": "Passive allocation into curated stable strategies.",
+    "yield_source": "Curator-managed DeFi yield",
+    "risks": [
+      "manager_risk"
+    ],
+    "capital_requirements": {
+      "asset": "USDC",
+      "min_usd": 1000,
+      "recommended_usd": 7000
+    },
+    "liquidity_constraints": "Redemption terms depend on vault.",
+    "leverage_profile": "low",
+    "default_alloc_template": {
+      "usdc_pct": 100
+    },
+    "simulation_assumptions": {
+      "base_apy": 0.085,
+      "volatility": 0.045
+    },
+    "handoff_mapping": "none",
+    "enabled": true
+  },
+  {
+    "strategy_id": "avax_curated_varlamore_lowmed_v1",
+    "version": "2026-03-06",
+    "name": "Conservative Yield Strategy Vault",
+    "risk_profile": "medium",
+    "category": "curated",
+    "protocols": [
+      "Varlamore Capital"
+    ],
+    "mechanism": "Institutional risk-adjusted vault allocation.",
+    "yield_source": "Managed multi-strategy yield",
+    "risks": [
+      "manager_risk",
+      "strategy_drift"
+    ],
+    "capital_requirements": {
+      "asset": "USDC",
+      "min_usd": 1500,
+      "recommended_usd": 10000
+    },
+    "liquidity_constraints": "Possible batched withdrawals.",
+    "leverage_profile": "low",
+    "default_alloc_template": {
+      "usdc_pct": 100
+    },
+    "simulation_assumptions": {
+      "base_apy": 0.1,
+      "volatility": 0.06
+    },
+    "handoff_mapping": "none",
+    "enabled": true
+  },
+  {
+    "strategy_id": "avax_staking_hypha_low_v1",
+    "version": "2026-03-06",
+    "name": "Liquid Staking AVAX",
+    "risk_profile": "low",
+    "category": "staking",
+    "protocols": [
+      "Hypha"
+    ],
+    "mechanism": "Stake AVAX and receive liquid derivative token.",
+    "yield_source": "Validator rewards",
+    "risks": [
+      "validator_risk",
+      "depeg_risk"
+    ],
+    "capital_requirements": {
+      "asset": "AVAX",
+      "min_usd": 200,
+      "recommended_usd": 3000
+    },
+    "liquidity_constraints": "Derivative liquidity depends on secondary markets.",
+    "leverage_profile": "none",
+    "default_alloc_template": {
+      "avax_pct": 100
+    },
+    "simulation_assumptions": {
+      "base_apy": 0.07,
+      "volatility": 0.12
+    },
+    "handoff_mapping": "staking",
+    "enabled": true
+  },
+  {
+    "strategy_id": "avax_lending_spark_low_v1",
+    "version": "2026-03-06",
+    "name": "Spark Stable Allocation",
+    "risk_profile": "low",
+    "category": "lending",
+    "protocols": [
+      "Spark"
+    ],
+    "mechanism": "Deposit stablecoins in structured lending pools.",
+    "yield_source": "Borrow demand",
+    "risks": [
+      "smart_contract",
+      "liquidity_utilization"
+    ],
+    "capital_requirements": {
+      "asset": "USDC",
+      "min_usd": 300,
+      "recommended_usd": 4500
+    },
+    "liquidity_constraints": "Utilization spikes can affect exit speed.",
+    "leverage_profile": "none",
+    "default_alloc_template": {
+      "usdc_pct": 100
+    },
+    "simulation_assumptions": {
+      "base_apy": 0.07,
+      "volatility": 0.03
+    },
+    "handoff_mapping": "lending",
+    "enabled": true
+  },
+  {
+    "strategy_id": "avax_basis_xsy_lowmed_v1",
+    "version": "2026-03-06",
+    "name": "Basis Yield Low Leverage",
+    "risk_profile": "medium",
+    "category": "basis",
+    "protocols": [
+      "XSY"
+    ],
+    "mechanism": "Capture spot-futures basis with low leverage.",
+    "yield_source": "Funding spread",
+    "risks": [
+      "funding_flip",
+      "liquidity_gaps"
+    ],
+    "capital_requirements": {
+      "asset": "USDC",
+      "min_usd": 1500,
+      "recommended_usd": 12000
+    },
+    "liquidity_constraints": "Requires derivatives venue liquidity.",
+    "leverage_profile": "low",
+    "default_alloc_template": {
+      "usdc_pct": 100
+    },
+    "simulation_assumptions": {
+      "base_apy": 0.12,
+      "volatility": 0.08
+    },
+    "handoff_mapping": "none",
+    "enabled": true
+  },
+  {
+    "strategy_id": "avax_lending_euler_avax_medium_v1",
+    "version": "2026-03-06",
+    "name": "AVAX Lending",
+    "risk_profile": "medium",
+    "category": "lending",
+    "protocols": [
+      "Euler V2"
+    ],
+    "mechanism": "Deposit AVAX and earn borrow demand.",
+    "yield_source": "Borrow interest and incentives",
+    "risks": [
+      "asset_volatility",
+      "liquidation_if_borrowing"
+    ],
+    "capital_requirements": {
+      "asset": "AVAX",
+      "min_usd": 300,
+      "recommended_usd": 5000
+    },
+    "liquidity_constraints": "Rate volatility follows demand.",
+    "leverage_profile": "none",
+    "default_alloc_template": {
+      "avax_pct": 100
+    },
+    "simulation_assumptions": {
+      "base_apy": 0.095,
+      "volatility": 0.14
+    },
+    "handoff_mapping": "lending",
+    "enabled": true
+  },
+  {
+    "strategy_id": "avax_lp_lfj_avax_usdc_medium_v1",
+    "version": "2026-03-06",
+    "name": "AVAX USDC Liquidity Provision",
+    "risk_profile": "medium",
+    "category": "lp",
+    "protocols": [
+      "LFJ"
+    ],
+    "mechanism": "Provide AVAX/USDC liquidity.",
+    "yield_source": "Trading fees and incentives",
+    "risks": [
+      "impermanent_loss",
+      "emissions_decay"
+    ],
+    "capital_requirements": {
+      "asset": "USDC",
+      "min_usd": 600,
+      "recommended_usd": 6000
+    },
+    "liquidity_constraints": "Pool depth and volatility impact exits.",
+    "leverage_profile": "none",
+    "default_alloc_template": {
+      "avax_pct": 50,
+      "usdc_pct": 50
+    },
+    "simulation_assumptions": {
+      "base_apy": 0.16,
+      "volatility": 0.22
+    },
+    "handoff_mapping": "swap",
+    "enabled": true
+  },
+  {
+    "strategy_id": "avax_lp_blackhole_stable_lowmed_v1",
+    "version": "2026-03-06",
+    "name": "Stable Pair Liquidity",
+    "risk_profile": "medium",
+    "category": "lp",
+    "protocols": [
+      "Blackhole"
+    ],
+    "mechanism": "Provide USDC/USDT liquidity.",
+    "yield_source": "Fees and potential incentives",
+    "risks": [
+      "peg_deviation",
+      "pool_contract_risk"
+    ],
+    "capital_requirements": {
+      "asset": "USDC",
+      "min_usd": 500,
+      "recommended_usd": 5000
+    },
+    "liquidity_constraints": "Stable pools can have utilization spikes.",
+    "leverage_profile": "none",
+    "default_alloc_template": {
+      "usdc_pct": 50,
+      "usdt_pct": 50
+    },
+    "simulation_assumptions": {
+      "base_apy": 0.11,
+      "volatility": 0.06
+    },
+    "handoff_mapping": "swap",
+    "enabled": true
+  },
+  {
+    "strategy_id": "avax_lp_pharaoh_concentrated_medium_v1",
+    "version": "2026-03-06",
+    "name": "Concentrated Liquidity Strategy",
+    "risk_profile": "medium",
+    "category": "lp",
+    "protocols": [
+      "Pharaoh Exchange"
+    ],
+    "mechanism": "Provide narrow range liquidity.",
+    "yield_source": "Concentrated fee capture",
+    "risks": [
+      "out_of_range_risk",
+      "impermanent_loss"
+    ],
+    "capital_requirements": {
+      "asset": "USDC",
+      "min_usd": 1000,
+      "recommended_usd": 8000
+    },
+    "liquidity_constraints": "Needs active rebalancing.",
+    "leverage_profile": "none",
+    "default_alloc_template": {
+      "avax_pct": 50,
+      "usdc_pct": 50
+    },
+    "simulation_assumptions": {
+      "base_apy": 0.18,
+      "volatility": 0.24
+    },
+    "handoff_mapping": "swap",
+    "enabled": true
+  },
+  {
+    "strategy_id": "avax_lending_loop_moderate_medium_v1",
+    "version": "2026-03-06",
+    "name": "Leveraged AVAX Loop Moderate",
+    "risk_profile": "medium",
+    "category": "lending",
+    "protocols": [
+      "Euler V2"
+    ],
+    "mechanism": "Deposit AVAX, borrow AVAX, redeposit.",
+    "yield_source": "Incentive spread",
+    "risks": [
+      "liquidation_risk",
+      "rate_shock"
+    ],
+    "capital_requirements": {
+      "asset": "AVAX",
+      "min_usd": 1500,
+      "recommended_usd": 9000
+    },
+    "liquidity_constraints": "Monitor LTV continuously.",
+    "leverage_profile": "moderate",
+    "default_alloc_template": {
+      "avax_pct": 100,
+      "target_ltv": 0.35
+    },
+    "simulation_assumptions": {
+      "base_apy": 0.19,
+      "volatility": 0.28
+    },
+    "handoff_mapping": "lending",
+    "enabled": true
+  },
+  {
+    "strategy_id": "avax_curated_k3_lp_medium_v1",
+    "version": "2026-03-06",
+    "name": "Curated LP Vault",
+    "risk_profile": "medium",
+    "category": "curated",
+    "protocols": [
+      "K3 Capital"
+    ],
+    "mechanism": "Delegated LP optimization.",
+    "yield_source": "Managed LP fees and emissions",
+    "risks": [
+      "manager_risk",
+      "lp_exposure"
+    ],
+    "capital_requirements": {
+      "asset": "USDC",
+      "min_usd": 1000,
+      "recommended_usd": 9000
+    },
+    "liquidity_constraints": "Vault cycles govern entry and exit.",
+    "leverage_profile": "low",
+    "default_alloc_template": {
+      "usdc_pct": 100
+    },
+    "simulation_assumptions": {
+      "base_apy": 0.14,
+      "volatility": 0.17
+    },
+    "handoff_mapping": "none",
+    "enabled": true
+  },
+  {
+    "strategy_id": "avax_hybrid_hypha_euler_medium_v1",
+    "version": "2026-03-06",
+    "name": "Liquid Staking Plus Lending",
+    "risk_profile": "medium",
+    "category": "staking",
+    "protocols": [
+      "Hypha",
+      "Euler V2"
+    ],
+    "mechanism": "Stake AVAX, collateralize derivative, borrow stablecoin.",
+    "yield_source": "Validator rewards and borrowing spread",
+    "risks": [
+      "depeg_risk",
+      "liquidation_risk"
+    ],
+    "capital_requirements": {
+      "asset": "AVAX",
+      "min_usd": 1200,
+      "recommended_usd": 8000
+    },
+    "liquidity_constraints": "Dual-protocol dependency.",
+    "leverage_profile": "moderate",
+    "default_alloc_template": {
+      "avax_pct": 100,
+      "target_ltv": 0.3
+    },
+    "simulation_assumptions": {
+      "base_apy": 0.17,
+      "volatility": 0.21
+    },
+    "handoff_mapping": "staking",
+    "enabled": true
+  },
+  {
+    "strategy_id": "avax_hybrid_centrifuge_euler_medium_v1",
+    "version": "2026-03-06",
+    "name": "RWA DeFi Hybrid Allocation",
+    "risk_profile": "medium",
+    "category": "rwa",
+    "protocols": [
+      "Centrifuge Protocol",
+      "Euler V2"
+    ],
+    "mechanism": "Blend tokenized credit yield with lending optimization.",
+    "yield_source": "Credit pool repayments and lending spread",
+    "risks": [
+      "credit_risk",
+      "smart_contract",
+      "liquidity_mismatch"
+    ],
+    "capital_requirements": {
+      "asset": "USDC",
+      "min_usd": 2000,
+      "recommended_usd": 15000
+    },
+    "liquidity_constraints": "Hybrid legs have different redemption profiles.",
+    "leverage_profile": "low",
+    "default_alloc_template": {
+      "rwa_pct": 60,
+      "lending_pct": 40
+    },
+    "simulation_assumptions": {
+      "base_apy": 0.115,
+      "volatility": 0.09
+    },
+    "handoff_mapping": "lending",
+    "enabled": true
+  },
+  {
+    "strategy_id": "avax_structured_avant_medium_v1",
+    "version": "2026-03-06",
+    "name": "Structured Yield Allocation",
+    "risk_profile": "medium",
+    "category": "structured",
+    "protocols": [
+      "Avant Protocol"
+    ],
+    "mechanism": "Participate in structured yield products.",
+    "yield_source": "Structured derivatives payoff",
+    "risks": [
+      "model_risk",
+      "liquidity_constraints"
+    ],
+    "capital_requirements": {
+      "asset": "USDC",
+      "min_usd": 1500,
+      "recommended_usd": 10000
+    },
+    "liquidity_constraints": "Maturity windows may restrict exits.",
+    "leverage_profile": "moderate",
+    "default_alloc_template": {
+      "usdc_pct": 100
+    },
+    "simulation_assumptions": {
+      "base_apy": 0.15,
+      "volatility": 0.18
+    },
+    "handoff_mapping": "none",
+    "enabled": true
+  },
+  {
+    "strategy_id": "avax_basis_xsy_active_medhigh_v1",
+    "version": "2026-03-06",
+    "name": "Basis Trading Active",
+    "risk_profile": "high",
+    "category": "basis",
+    "protocols": [
+      "XSY"
+    ],
+    "mechanism": "Active basis capture with higher efficiency.",
+    "yield_source": "Funding spread",
+    "risks": [
+      "funding_flip",
+      "execution_risk"
+    ],
+    "capital_requirements": {
+      "asset": "USDC",
+      "min_usd": 3000,
+      "recommended_usd": 20000
+    },
+    "liquidity_constraints": "Derivatives liquidity and basis depth required.",
+    "leverage_profile": "moderate",
+    "default_alloc_template": {
+      "usdc_pct": 100,
+      "max_leverage": 2.0
+    },
+    "simulation_assumptions": {
+      "base_apy": 0.2,
+      "volatility": 0.22
+    },
+    "handoff_mapping": "none",
+    "enabled": true
+  },
+  {
+    "strategy_id": "avax_lp_lfj_avax_weth_high_v1",
+    "version": "2026-03-06",
+    "name": "AVAX WETH Liquidity Provision",
+    "risk_profile": "high",
+    "category": "lp",
+    "protocols": [
+      "LFJ"
+    ],
+    "mechanism": "Provide liquidity in volatile AVAX/WETH pair.",
+    "yield_source": "Fees and incentives",
+    "risks": [
+      "impermanent_loss",
+      "pair_volatility"
+    ],
+    "capital_requirements": {
+      "asset": "USDC",
+      "min_usd": 1000,
+      "recommended_usd": 10000
+    },
+    "liquidity_constraints": "High volatility can cause rapid range shifts.",
+    "leverage_profile": "none",
+    "default_alloc_template": {
+      "avax_pct": 50,
+      "weth_pct": 50
+    },
+    "simulation_assumptions": {
+      "base_apy": 0.24,
+      "volatility": 0.32
+    },
+    "handoff_mapping": "swap",
+    "enabled": true
+  },
+  {
+    "strategy_id": "avax_lp_blackhole_longtail_high_v1",
+    "version": "2026-03-06",
+    "name": "Long Tail Token LP",
+    "risk_profile": "high",
+    "category": "lp",
+    "protocols": [
+      "Blackhole"
+    ],
+    "mechanism": "Provide liquidity in emerging token pools.",
+    "yield_source": "High fee APR and incentives",
+    "risks": [
+      "token_tail_risk",
+      "impermanent_loss",
+      "liquidity_drain"
+    ],
+    "capital_requirements": {
+      "asset": "USDC",
+      "min_usd": 1000,
+      "recommended_usd": 9000
+    },
+    "liquidity_constraints": "Depth can collapse under volatility.",
+    "leverage_profile": "none",
+    "default_alloc_template": {
+      "usdc_pct": 50,
+      "tail_token_pct": 50
+    },
+    "simulation_assumptions": {
+      "base_apy": 0.28,
+      "volatility": 0.38
+    },
+    "handoff_mapping": "swap",
+    "enabled": true
+  },
+  {
+    "strategy_id": "avax_lending_euler_leveraged_stable_high_v1",
+    "version": "2026-03-06",
+    "name": "Leveraged Stable Farming",
+    "risk_profile": "high",
+    "category": "lending",
+    "protocols": [
+      "Euler V2"
+    ],
+    "mechanism": "Recursive stable borrowing near max LTV.",
+    "yield_source": "Looped spread and incentives",
+    "risks": [
+      "liquidation_risk",
+      "rate_shock",
+      "peg_risk"
+    ],
+    "capital_requirements": {
+      "asset": "USDC",
+      "min_usd": 2000,
+      "recommended_usd": 12000
+    },
+    "liquidity_constraints": "Very sensitive to rate changes.",
+    "leverage_profile": "high",
+    "default_alloc_template": {
+      "usdc_pct": 100,
+      "target_ltv": 0.75
+    },
+    "simulation_assumptions": {
+      "base_apy": 0.26,
+      "volatility": 0.3
+    },
+    "handoff_mapping": "lending",
+    "enabled": true
+  },
+  {
+    "strategy_id": "avax_lp_pharaoh_vol_farming_high_v1",
+    "version": "2026-03-06",
+    "name": "Concentrated Volatility Farming",
+    "risk_profile": "high",
+    "category": "lp",
+    "protocols": [
+      "Pharaoh Exchange"
+    ],
+    "mechanism": "Narrow-range LP in volatile assets.",
+    "yield_source": "High fee capture",
+    "risks": [
+      "out_of_range_risk",
+      "impermanent_loss",
+      "active_management"
+    ],
+    "capital_requirements": {
+      "asset": "USDC",
+      "min_usd": 1500,
+      "recommended_usd": 12000
+    },
+    "liquidity_constraints": "Requires active strategy re-centering.",
+    "leverage_profile": "none",
+    "default_alloc_template": {
+      "avax_pct": 50,
+      "alt_pct": 50
+    },
+    "simulation_assumptions": {
+      "base_apy": 0.3,
+      "volatility": 0.42
+    },
+    "handoff_mapping": "swap",
+    "enabled": true
+  },
+  {
+    "strategy_id": "avax_curated_mev_high_tranche_v1",
+    "version": "2026-03-06",
+    "name": "Managed High Yield Vault",
+    "risk_profile": "high",
+    "category": "curated",
+    "protocols": [
+      "MEV Capital"
+    ],
+    "mechanism": "Allocate to higher-risk tranches.",
+    "yield_source": "Managed high-beta DeFi exposure",
+    "risks": [
+      "manager_risk",
+      "tranche_drawdown"
+    ],
+    "capital_requirements": {
+      "asset": "USDC",
+      "min_usd": 2500,
+      "recommended_usd": 15000
+    },
+    "liquidity_constraints": "Tranche exits can be delayed.",
+    "leverage_profile": "moderate",
+    "default_alloc_template": {
+      "usdc_pct": 100
+    },
+    "simulation_assumptions": {
+      "base_apy": 0.22,
+      "volatility": 0.25
+    },
+    "handoff_mapping": "none",
+    "enabled": true
+  },
+  {
+    "strategy_id": "avax_rwa_centrifuge_credit_high_v1",
+    "version": "2026-03-06",
+    "name": "Credit Pool Exposure",
+    "risk_profile": "high",
+    "category": "rwa",
+    "protocols": [
+      "Centrifuge Protocol"
+    ],
+    "mechanism": "Allocate to higher-yield credit pools.",
+    "yield_source": "Borrower credit spreads",
+    "risks": [
+      "credit_default",
+      "seniority_risk"
+    ],
+    "capital_requirements": {
+      "asset": "USDC",
+      "min_usd": 3000,
+      "recommended_usd": 18000
+    },
+    "liquidity_constraints": "Credit pool exits depend on borrower cycles.",
+    "leverage_profile": "none",
+    "default_alloc_template": {
+      "usdc_pct": 100
+    },
+    "simulation_assumptions": {
+      "base_apy": 0.19,
+      "volatility": 0.16
+    },
+    "handoff_mapping": "lending",
+    "enabled": true
+  },
+  {
+    "strategy_id": "avax_hybrid_euler_lfj_veryhigh_v1",
+    "version": "2026-03-06",
+    "name": "Leveraged AVAX Plus LP Deployment",
+    "risk_profile": "very_high",
+    "category": "lp",
+    "protocols": [
+      "Euler V2",
+      "LFJ"
+    ],
+    "mechanism": "Borrow AVAX and deploy into LP pools.",
+    "yield_source": "Leveraged LP fees and incentives",
+    "risks": [
+      "double_leverage",
+      "liquidation_risk",
+      "impermanent_loss"
+    ],
+    "capital_requirements": {
+      "asset": "AVAX",
+      "min_usd": 5000,
+      "recommended_usd": 25000
+    },
+    "liquidity_constraints": "Compounded liquidity and collateral risks.",
+    "leverage_profile": "high",
+    "default_alloc_template": {
+      "avax_pct": 70,
+      "usdc_pct": 30,
+      "target_ltv": 0.7
+    },
+    "simulation_assumptions": {
+      "base_apy": 0.36,
+      "volatility": 0.55
+    },
+    "handoff_mapping": "lending",
+    "enabled": true
+  },
+  {
+    "strategy_id": "avax_basis_xsy_aggressive_veryhigh_v1",
+    "version": "2026-03-06",
+    "name": "Aggressive Basis Arbitrage",
+    "risk_profile": "very_high",
+    "category": "basis",
+    "protocols": [
+      "XSY"
+    ],
+    "mechanism": "High leverage basis capture.",
+    "yield_source": "Funding spread with leverage",
+    "risks": [
+      "funding_flip",
+      "liquidation_risk",
+      "execution_slippage"
+    ],
+    "capital_requirements": {
+      "asset": "USDC",
+      "min_usd": 5000,
+      "recommended_usd": 30000
+    },
+    "liquidity_constraints": "Requires robust perp and spot depth.",
+    "leverage_profile": "high",
+    "default_alloc_template": {
+      "usdc_pct": 100,
+      "max_leverage": 4.0
+    },
+    "simulation_assumptions": {
+      "base_apy": 0.42,
+      "volatility": 0.62
+    },
+    "handoff_mapping": "none",
+    "enabled": true
+  },
+  {
+    "strategy_id": "avax_curated_varlamore_re7_rotation_high_v1",
+    "version": "2026-03-06",
+    "name": "Multi Vault Yield Rotation",
+    "risk_profile": "high",
+    "category": "curated",
+    "protocols": [
+      "Varlamore Capital",
+      "Re7 Labs"
+    ],
+    "mechanism": "Rotate capital dynamically across high APY vaults.",
+    "yield_source": "Dynamic manager allocation",
+    "risks": [
+      "manager_timing_risk",
+      "rotation_slippage"
+    ],
+    "capital_requirements": {
+      "asset": "USDC",
+      "min_usd": 3000,
+      "recommended_usd": 20000
+    },
+    "liquidity_constraints": "Rotation cadence and lockups affect agility.",
+    "leverage_profile": "moderate",
+    "default_alloc_template": {
+      "usdc_pct": 100
+    },
+    "simulation_assumptions": {
+      "base_apy": 0.23,
+      "volatility": 0.27
+    },
+    "handoff_mapping": "none",
+    "enabled": true
+  },
+  {
+    "strategy_id": "avax_structured_avant_derivative_veryhigh_v1",
+    "version": "2026-03-06",
+    "name": "Structured Yield Derivative Strategy",
+    "risk_profile": "very_high",
+    "category": "structured",
+    "protocols": [
+      "Avant Protocol"
+    ],
+    "mechanism": "Use structured leveraged yield instruments.",
+    "yield_source": "Derivative payoff engineering",
+    "risks": [
+      "path_dependency",
+      "liquidity_gap",
+      "model_risk"
+    ],
+    "capital_requirements": {
+      "asset": "USDC",
+      "min_usd": 5000,
+      "recommended_usd": 25000
+    },
+    "liquidity_constraints": "Often constrained by tranche and maturity windows.",
+    "leverage_profile": "high",
+    "default_alloc_template": {
+      "usdc_pct": 100
+    },
+    "simulation_assumptions": {
+      "base_apy": 0.4,
+      "volatility": 0.58
+    },
+    "handoff_mapping": "none",
+    "enabled": true
+  }
+]

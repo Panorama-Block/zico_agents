@@ -26,6 +26,7 @@ class IntentCategory(str, Enum):
     LENDING = "lending"
     STAKING = "staking"
     DCA = "dca"
+    STRATEGY = "strategy"
     MARKET_DATA = "market_data"
     PORTFOLIO = "portfolio"
     EDUCATION = "education"
@@ -39,6 +40,7 @@ _INTENT_AGENT_MAP: Dict[IntentCategory, str] = {
     IntentCategory.LENDING: "lending_agent",
     IntentCategory.STAKING: "staking_agent",
     IntentCategory.DCA: "dca_agent",
+    IntentCategory.STRATEGY: "strategy_agent",
     IntentCategory.MARKET_DATA: "crypto_agent",
     IntentCategory.PORTFOLIO: "portfolio_advisor",
     IntentCategory.EDUCATION: "default_agent",
@@ -103,6 +105,16 @@ INTENT_EXEMPLARS: Dict[IntentCategory, List[str]] = {
         "Plan a DCA strategy for me",
         "I want to buy ETH every week automatically",
         "Create a recurring buy plan",
+    ],
+    IntentCategory.STRATEGY: [
+        "Build an Avalanche yield strategy for my USDC",
+        "Recommend a low-risk AVAX strategy matrix allocation",
+        "I want a medium risk plan across lending and LP on Avalanche",
+        "Compare high-yield Avalanche strategies for me",
+        "Show me a risk-adjusted strategy plan with 30 90 180 day projections",
+        "Help me choose between RWA and DeFi yield on AVAX",
+        "I need a strategy advisor for the AVAX ecosystem",
+        "Suggest an allocation with stress scenarios and drawdown limits",
     ],
     IntentCategory.MARKET_DATA: [
         "What is the price of Bitcoin?",

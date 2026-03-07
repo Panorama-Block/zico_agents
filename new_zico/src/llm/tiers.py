@@ -29,6 +29,7 @@ AGENT_TIER_MAP: dict[str, str] = {
     "lending_agent":  ModelTier.FAST,
     "staking_agent":  ModelTier.FAST,
     "dca_agent":      ModelTier.FAST,
+    "strategy_agent": ModelTier.FAST,
     "database_agent": ModelTier.FAST,
     "formatter":      ModelTier.FAST,
     "llm_router":     ModelTier.FAST,

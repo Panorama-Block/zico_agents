@@ -138,6 +138,7 @@ def _map_agent_type(agent_name: str) -> str:
         "swap_agent": "token swap",
         "lending_agent": "lending",
         "staking_agent": "staking",
+        "strategy_agent": "yield strategy",
         "portfolio_advisor": "portfolio analysis",
         "supervisor": "supervisor",
     }
@@ -231,6 +232,10 @@ def _build_response_payload(result, user_id, conversation_id, extra_fields=None)
         staking_meta = metadata.get_staking_agent(user_id=user_id, conversation_id=conversation_id)
         if staking_meta:
             full_metadata.update(staking_meta)
+    elif agent_name == "yield strategy":
+        strategy_meta = metadata.get_strategy_agent(user_id=user_id, conversation_id=conversation_id)
+        if strategy_meta:
+            full_metadata.update(strategy_meta)
 
     # Create and store the response message
     response_message = ChatMessage(
@@ -241,8 +246,8 @@ def _build_response_payload(result, user_id, conversation_id, extra_fields=None)
         metadata=response_metadata,
         conversation_id=conversation_id,
         user_id=user_id,
-        requires_action=True if agent_name in ["token swap", "lending", "staking"] else False,
-        action_type="swap" if agent_name == "token swap" else "lending" if agent_name == "lending" else "staking" if agent_name == "staking" else None,
+        requires_action=True if agent_name in ["token swap", "lending", "staking", "yield strategy"] else False,
+        action_type="swap" if agent_name == "token swap" else "lending" if agent_name == "lending" else "staking" if agent_name == "staking" else "strategy" if agent_name == "yield strategy" else None,
     )
 
     chat_manager_instance.add_message(
@@ -295,6 +300,8 @@ def _clear_ready_metadata(agent_name, response_meta, user_id, conversation_id):
         metadata.set_lending_agent({}, user_id=user_id, conversation_id=conversation_id)
     elif agent_name == "staking" and (status == "ready" or event == "staking_intent_ready"):
         metadata.set_staking_agent({}, user_id=user_id, conversation_id=conversation_id)
+    elif agent_name == "yield strategy" and (status == "ready" or event == "strategy_intent_ready"):
+        metadata.set_strategy_agent({}, user_id=user_id, conversation_id=conversation_id)
 
 
 @app.get("/health")
@@ -465,6 +472,7 @@ _NODE_LABELS: Dict[str, str] = {
     "lending_agent_node": "Checking lending markets...",
     "staking_agent_node": "Reviewing staking options...",
     "dca_agent_node": "Planning DCA strategy...",
+    "strategy_agent_node": "Designing AVAX strategy...",
     "crypto_agent_node": "Fetching market data...",
     "search_agent_node": "Searching the web...",
     "default_agent_node": "Thinking...",
@@ -500,7 +508,7 @@ async def _persist_response_bg(
             conversation_id=conversation_id,
             user_id=user_id,
             requires_action=(
-                True if agent_name in ("token swap", "lending", "staking") else False
+                True if agent_name in ("token swap", "lending", "staking", "yield strategy") else False
             ),
             action_type=(
                 "swap"
@@ -509,6 +517,8 @@ async def _persist_response_bg(
                 if agent_name == "lending"
                 else "staking"
                 if agent_name == "staking"
+                else "strategy"
+                if agent_name == "yield strategy"
                 else None
             ),
         )
@@ -648,6 +658,10 @@ def _build_event_generator(
                 staking_meta = metadata.get_staking_agent(user_id=user_id, conversation_id=conversation_id)
                 if staking_meta:
                     response_metadata = staking_meta
+            elif agent_name == "yield strategy":
+                strategy_meta = metadata.get_strategy_agent(user_id=user_id, conversation_id=conversation_id)
+                if strategy_meta:
+                    response_metadata = strategy_meta
 
         yield _sse("done", {
             "agent": agent_name,
@@ -903,7 +917,7 @@ You will receive an audio clip. Perform TWO tasks:
 
 1. **Transcribe** exactly what is being said.
 2. **Classify** the user's intent into one of these categories:
-   swap, lending, staking, dca, market_data, search, education, general
+   swap, lending, staking, dca, strategy, market_data, search, education, general
 
 Return ONLY a JSON object (no markdown fences) with these fields:
 {"transcription": "<exact transcription>", "intent": "<category>", "confidence": <0.0-1.0>}
@@ -920,6 +934,7 @@ _AUDIO_INTENT_AGENT_MAP: Dict[str, str] = {
     "lending": "lending_agent",
     "staking": "staking_agent",
     "dca": "dca_agent",
+    "strategy": "strategy_agent",
     "market_data": "crypto_agent",
     "portfolio": "portfolio_advisor",
     "search": "search_agent",

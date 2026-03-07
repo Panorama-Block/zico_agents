@@ -9,8 +9,15 @@ This module provides:
 """
 
 from .logging import setup_logging, get_logger
-from .rate_limiter import limiter, setup_rate_limiter, limit_chat, limit_stream
 from .retry import execute_with_retry, RetryConfig
+
+try:
+    from .rate_limiter import limiter, setup_rate_limiter, limit_chat, limit_stream
+except Exception:  # pragma: no cover - optional in minimal test/runtime environments.
+    limiter = None  # type: ignore[assignment]
+    setup_rate_limiter = None  # type: ignore[assignment]
+    limit_chat = None  # type: ignore[assignment]
+    limit_stream = None  # type: ignore[assignment]
 
 __all__ = [
     # Logging

@@ -36,11 +36,13 @@ class AgentState(TypedDict, total=False):
     swap_state: Optional[Dict[str, Any]]
     lending_state: Optional[Dict[str, Any]]
     staking_state: Optional[Dict[str, Any]]
+    liquidity_state: Optional[Dict[str, Any]]
     dca_state: Optional[Dict[str, Any]]
     strategy_state: Optional[Dict[str, Any]]
     strategy_preferences: Optional[Dict[str, Any]]
     awaiting_swap: bool
     awaiting_dca: bool
+    awaiting_liquidity: bool
 
     # --- Output ---
     final_response: str

@@ -103,6 +103,16 @@ _STAKING_PATTERN = re.compile(
     re.IGNORECASE,
 )
 
+_LIQUIDITY_PATTERN = re.compile(
+    r"(add.liquidity|remove.liquidity|provide.liquidity|claim.rewards?|stake|unstake|enter|exit|claim)\s*"
+    r"(?:(?:to|from|in|into)\s+)?"
+    r"(?:(\d+(?:[.,]\d+)?)\s+)?"
+    r"(\w+-\w+|\w+)?"
+    r"(?:\s+(?:pool|lp))?"
+    r"(?:\s+(?:on|na|no|em)\s+(\S+))?",
+    re.IGNORECASE,
+)
+
 # Standalone amount + token (e.g. "100 USDC", "0.5 ETH")
 _AMOUNT_TOKEN = re.compile(
     r"(\d+(?:[.,]\d+)?)\s+([A-Za-z]{2,10})\b",
@@ -188,6 +198,31 @@ def pre_extract(text: str, intent: str) -> PreExtractedParams:
             params.amount = _safe_decimal(m.group(2))
             if m.group(3):
                 params.from_token = m.group(3).upper()
+
+    elif intent == "liquidity":
+        m = _LIQUIDITY_PATTERN.search(text)
+        if m:
+            raw_action = m.group(1).lower().replace(" ", "_").replace(".", "_")
+            if "add" in raw_action or "provide" in raw_action:
+                params.action = "enter"
+            elif "stake" in raw_action and "un" not in raw_action:
+                params.action = "enter"
+            elif "remove" in raw_action or "unstake" in raw_action:
+                params.action = "exit"
+            elif "claim" in raw_action:
+                params.action = "claim"
+            elif "enter" in raw_action:
+                params.action = "enter"
+            elif "exit" in raw_action:
+                params.action = "exit"
+            params.amount = _safe_decimal(m.group(2))
+            if m.group(3):
+                params.from_token = m.group(3).upper()
+        if not params.has_any():
+            am = _AMOUNT_TOKEN.search(text)
+            if am:
+                params.amount = _safe_decimal(am.group(1))
+                params.from_token = am.group(2).upper()
 
     elif intent == "dca":
         # DCA is complex; just try to extract token pair

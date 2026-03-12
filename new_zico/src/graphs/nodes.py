@@ -53,6 +53,9 @@ from src.agents.staking.prompt import STAKING_AGENT_SYSTEM_PROMPT
 from src.agents.strategy.agent import StrategyAgent
 from src.agents.strategy.tools import strategy_session
 from src.agents.strategy.prompt import STRATEGY_AGENT_SYSTEM_PROMPT
+from src.agents.liquidity.agent import LiquidityAgent
+from src.agents.liquidity.tools import liquidity_session
+from src.agents.liquidity.prompt import LIQUIDITY_AGENT_SYSTEM_PROMPT
 from src.agents.search.agent import SearchAgent
 from src.agents.portfolio.agent import PortfolioAdvisorAgent
 from src.agents.portfolio.tools import portfolio_session
@@ -129,6 +132,7 @@ def initialize_agents() -> None:
     _agents["lending_agent"] = LendingAgent(llm).agent
     _agents["staking_agent"] = StakingAgent(llm).agent
     _agents["strategy_agent"] = StrategyAgent(llm).agent
+    _agents["liquidity_agent"] = LiquidityAgent(llm).agent
 
     _agents["portfolio_advisor"] = PortfolioAdvisorAgent(llm).agent
 
@@ -147,6 +151,7 @@ def initialize_agents() -> None:
         "lending_agent": LendingAgent,
         "staking_agent": StakingAgent,
         "strategy_agent": StrategyAgent,
+        "liquidity_agent": LiquidityAgent,
         "portfolio_advisor": PortfolioAdvisorAgent,
     }
 
@@ -172,7 +177,7 @@ def entry_node(state: AgentState) -> dict:
     windowed = prepare_context(messages, max_recent=8, summarizer_llm=fast_llm)
 
     # Detect pending followups
-    awaiting_swap, awaiting_dca = detect_pending_followups(messages)
+    awaiting_swap, awaiting_dca, awaiting_liquidity = detect_pending_followups(messages)
 
     # Build LangChain messages
     langchain_messages: List[Any] = []
@@ -206,6 +211,7 @@ def entry_node(state: AgentState) -> dict:
     lending_state = metadata.get_lending_agent(user_id=user_id, conversation_id=conversation_id)
     staking_state = metadata.get_staking_agent(user_id=user_id, conversation_id=conversation_id)
     strategy_state = metadata.get_strategy_agent(user_id=user_id, conversation_id=conversation_id)
+    liquidity_state = metadata.get_liquidity_agent(user_id=user_id, conversation_id=conversation_id)
 
     # Last user message
     last_user_msg = ""
@@ -217,7 +223,7 @@ def entry_node(state: AgentState) -> dict:
     # Active DeFi flow?
     has_active_defi = any(
         s and s.get("status") in ("collecting", "consulting", "recommendation", "confirmation")
-        for s in (swap_state, lending_state, staking_state, dca_state)
+        for s in (swap_state, lending_state, staking_state, liquidity_state, dca_state)
     )
     has_active_defi = has_active_defi or bool(
         strategy_state
@@ -271,11 +277,13 @@ def entry_node(state: AgentState) -> dict:
         "swap_state": swap_state or None,
         "lending_state": lending_state or None,
         "staking_state": staking_state or None,
+        "liquidity_state": liquidity_state or None,
         "dca_state": dca_state or None,
         "strategy_state": strategy_state or None,
         "strategy_preferences": (strategy_state or {}).get("overrides") if strategy_state else None,
         "awaiting_swap": awaiting_swap,
         "awaiting_dca": awaiting_dca,
+        "awaiting_liquidity": awaiting_liquidity,
         "has_active_defi": has_active_defi,
         "preflight_errors": [],
         "nodes_executed": ["entry_node"],
@@ -337,7 +345,7 @@ def semantic_router_node(state: AgentState) -> dict:
     pre_hint: Optional[str] = None
 
     if intent_str and confidence >= SemanticRouter.LOW_CONFIDENCE:
-        if intent_str in ("swap", "lending", "staking", "dca"):
+        if intent_str in ("swap", "lending", "staking", "liquidity", "dca"):
             extracted = pre_extract(last_user_msg, intent_str)
 
             # Preflight validation
@@ -348,6 +356,15 @@ def semantic_router_node(state: AgentState) -> dict:
             # Parameter hint for downstream agent
             if not preflight_errors and extracted and extracted.has_any():
                 pre_hint = extracted.to_hint()
+
+    logger.info(
+        "routing.semantic intent=%s confidence=%.3f agent=%s has_active_defi=%s preflight_errors=%d",
+        intent_str or "none",
+        confidence,
+        agent_name or "none",
+        has_active_defi,
+        len(preflight_errors),
+    )
 
     return {
         "route_intent": intent_str,
@@ -373,6 +390,7 @@ Available agents:
 - lending_agent: Lending operations (supply, borrow, repay, withdraw).
 - staking_agent: Staking operations (stake ETH, unstake stETH via Lido).
 - strategy_agent: Avalanche yield strategy planning and allocation workflows.
+- liquidity_agent: Liquidity operations (add/remove liquidity, stake/unstake LP tokens, claim rewards on Aerodrome/Base).
 - portfolio_advisor: Portfolio analysis, risk assessment, wallet holdings, rebalancing advice.
 - search_agent: Web search for current events and factual lookups.
 - database_agent: Database queries and data analysis.
@@ -400,8 +418,8 @@ def llm_router_node(state: AgentState) -> dict:
         # Validate
         valid_agents = {
             "crypto_agent", "swap_agent", "dca_agent", "lending_agent",
-            "staking_agent", "strategy_agent", "portfolio_advisor", "search_agent",
-            "database_agent", "default_agent",
+            "staking_agent", "strategy_agent", "liquidity_agent", "portfolio_advisor",
+            "search_agent", "database_agent", "default_agent",
         }
         if chosen not in valid_agents:
             chosen = "default_agent"
@@ -506,11 +524,12 @@ def _invoke_defi_agent(
         }
 
     agent_name, text, messages_out = extract_response_from_graph(response)
-    meta = build_metadata(agent_name or agent_key, user_id, conversation_id, messages_out)
+    resolved_agent_name = agent_name if agent_name and agent_name != "supervisor" else agent_key
+    meta = build_metadata(resolved_agent_name, user_id, conversation_id, messages_out)
 
     return {
         "final_response": text,
-        "response_agent": agent_name or agent_key,
+        "response_agent": resolved_agent_name,
         "response_metadata": meta,
         "raw_agent_messages": messages_out,
         "nodes_executed": nodes,
@@ -574,11 +593,12 @@ def swap_agent_node(state: AgentState, config: RunnableConfig | None = None) -> 
         }
 
     agent_name, text, messages_out = extract_response_from_graph(response)
-    meta = build_metadata(agent_name or "swap_agent", user_id, conversation_id, messages_out)
+    resolved_agent_name = agent_name if agent_name and agent_name != "supervisor" else "swap_agent"
+    meta = build_metadata(resolved_agent_name, user_id, conversation_id, messages_out)
 
     return {
         "final_response": text,
-        "response_agent": agent_name or "swap_agent",
+        "response_agent": resolved_agent_name,
         "response_metadata": meta,
         "raw_agent_messages": messages_out,
         "nodes_executed": nodes,
@@ -591,6 +611,10 @@ def lending_agent_node(state: AgentState, config: RunnableConfig | None = None) 
 
 def staking_agent_node(state: AgentState, config: RunnableConfig | None = None) -> dict:
     return _invoke_defi_agent("staking_agent", STAKING_AGENT_SYSTEM_PROMPT, staking_session, state, "staking", config)
+
+
+def liquidity_agent_node(state: AgentState, config: RunnableConfig | None = None) -> dict:
+    return _invoke_defi_agent("liquidity_agent", LIQUIDITY_AGENT_SYSTEM_PROMPT, liquidity_session, state, "liquidity", config)
 
 
 def dca_agent_node(state: AgentState, config: RunnableConfig | None = None) -> dict:
@@ -642,11 +666,12 @@ def _invoke_simple_agent(agent_key: str, state: AgentState, config: RunnableConf
         }
 
     agent_name, text, messages_out = extract_response_from_graph(response)
-    meta = build_metadata(agent_name or agent_key, user_id, conversation_id, messages_out)
+    resolved_agent_name = agent_name if agent_name and agent_name != "supervisor" else agent_key
+    meta = build_metadata(resolved_agent_name, user_id, conversation_id, messages_out)
 
     return {
         "final_response": text,
-        "response_agent": agent_name or agent_key,
+        "response_agent": resolved_agent_name,
         "response_metadata": meta,
         "raw_agent_messages": messages_out,
         "nodes_executed": nodes,
@@ -708,11 +733,12 @@ def portfolio_advisor_node(state: AgentState, config: RunnableConfig | None = No
         }
 
     agent_name, text, messages_out = extract_response_from_graph(response)
-    meta = build_metadata(agent_name or "portfolio_advisor", user_id, conversation_id, messages_out)
+    resolved_agent_name = agent_name if agent_name and agent_name != "supervisor" else "portfolio_advisor"
+    meta = build_metadata(resolved_agent_name, user_id, conversation_id, messages_out)
 
     return {
         "final_response": text,
-        "response_agent": agent_name or "portfolio_advisor",
+        "response_agent": resolved_agent_name,
         "response_metadata": meta,
         "raw_agent_messages": messages_out,
         "nodes_executed": nodes,

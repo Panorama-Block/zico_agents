@@ -25,6 +25,7 @@ class IntentCategory(str, Enum):
     SWAP = "swap"
     LENDING = "lending"
     STAKING = "staking"
+    LIQUIDITY = "liquidity"
     DCA = "dca"
     STRATEGY = "strategy"
     MARKET_DATA = "market_data"
@@ -39,6 +40,7 @@ _INTENT_AGENT_MAP: Dict[IntentCategory, str] = {
     IntentCategory.SWAP: "swap_agent",
     IntentCategory.LENDING: "lending_agent",
     IntentCategory.STAKING: "staking_agent",
+    IntentCategory.LIQUIDITY: "liquidity_agent",
     IntentCategory.DCA: "dca_agent",
     IntentCategory.STRATEGY: "strategy_agent",
     IntentCategory.MARKET_DATA: "crypto_agent",
@@ -96,6 +98,21 @@ INTENT_EXEMPLARS: Dict[IntentCategory, List[str]] = {
         "How much can I earn from staking?",
         "I want to do liquid staking",
         "Stake ETH for stETH rewards",
+    ],
+    IntentCategory.LIQUIDITY: [
+        "I want to provide liquidity on Aerodrome",
+        "Add liquidity to WETH-USDC pool on Base",
+        "Remove my liquidity from the USDC pool",
+        "Stake my LP tokens to earn AERO rewards",
+        "Unstake my LP tokens from the gauge",
+        "Claim my AERO farming rewards",
+        "Enter position on WETH-USDC pool",
+        "Exit my LP position",
+        "Claim rewards from my liquidity pool",
+        "I want to LP on Aerodrome",
+        "Deposit into a liquidity pool on Base",
+        "Yield farming on Aerodrome",
+        "I want to farm AERO rewards",
     ],
     IntentCategory.DCA: [
         "Help me schedule a daily DCA from USDC to AVAX",

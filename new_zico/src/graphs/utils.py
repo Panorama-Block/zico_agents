@@ -160,6 +160,7 @@ KNOWN_AGENT_NAMES = {
     "lending_agent",
     "staking_agent",
     "strategy_agent",
+    "liquidity_agent",
     "search_agent",
     "default_agent",
 }
@@ -271,6 +272,13 @@ def build_metadata(
             lambda: metadata.get_strategy_history(user_id=user_id, conversation_id=conversation_id),
         )
 
+    if agent_name == "liquidity_agent":
+        liquidity_meta = metadata.get_liquidity_agent(user_id=user_id, conversation_id=conversation_id)
+        return _with_history(
+            liquidity_meta,
+            lambda: metadata.get_liquidity_history(user_id=user_id, conversation_id=conversation_id),
+        )
+
     if agent_name == "crypto_agent":
         tool_meta = _collect_tool_metadata(messages_out)
         if tool_meta:
@@ -363,6 +371,13 @@ def build_defi_guidance(intent_type: str, defi_state: Optional[dict]) -> Optiona
             "There is an in-progress strategy planning session for this conversation.",
             "Keep routing messages to the strategy_agent until the workflow is confirmed or the user cancels.",
         ]
+    elif intent_type == "liquidity":
+        if status != "collecting":
+            return None
+        parts = [
+            "There is an in-progress liquidity intent for this conversation.",
+            "Keep routing messages to the liquidity_agent until the intent is complete unless the user explicitly cancels or changes topic.",
+        ]
     else:
         return None
 
@@ -409,10 +424,11 @@ def build_preflight_params(intent: str, extracted) -> dict:
 # Pending followup detection
 # ---------------------------------------------------------------------------
 
-def detect_pending_followups(messages: List[Any]) -> Tuple[bool, bool]:
-    """Check message history for pending swap/DCA followups."""
+def detect_pending_followups(messages: List[Any]) -> Tuple[bool, bool, bool]:
+    """Check message history for pending swap/DCA/liquidity followups."""
     awaiting_swap = False
     awaiting_dca = False
+    awaiting_liquidity = False
 
     def _get(entry, dict_keys, attr_name):
         if isinstance(entry, dict):
@@ -444,9 +460,11 @@ def detect_pending_followups(messages: List[Any]) -> Tuple[bool, bool]:
                 awaiting_swap = True
             if action_type == "dca" or "dca" in agent_label:
                 awaiting_dca = True
+            if action_type in ("liquidity", "yield") or "liquidity" in agent_label or "yield" in agent_label:
+                awaiting_liquidity = True
         break
 
-    return awaiting_swap, awaiting_dca
+    return awaiting_swap, awaiting_dca, awaiting_liquidity
 
 
 # ---------------------------------------------------------------------------
@@ -558,6 +576,26 @@ def is_staking_like_request(messages: List[Dict[str, Any]]) -> bool:
             "steth", "lido", "liquid staking", "staking rewards", "eth staking",
         )
         if not any(keyword in lowered for keyword in staking_keywords):
+            return False
+        return True
+    return False
+
+
+def is_liquidity_like_request(messages: List[Dict[str, Any]]) -> bool:
+    """Check if the latest user message looks like a liquidity/farming request."""
+    for msg in reversed(messages):
+        if msg.get("role") != "user":
+            continue
+        content = (msg.get("content") or "").strip()
+        if not content:
+            continue
+        lowered = content.lower()
+        liquidity_keywords = (
+            "liquidity", "lp token", "lp tokens", "add liquidity", "remove liquidity",
+            "provide liquidity", "aerodrome", "farming", "yield farming",
+            "gauge", "claim rewards", "claim aero", "aero rewards",
+        )
+        if not any(keyword in lowered for keyword in liquidity_keywords):
             return False
         return True
     return False

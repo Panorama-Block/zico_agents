@@ -7,6 +7,7 @@ from src.agents.dca.storage import DcaStateRepository
 from src.agents.lending.storage import LendingStateRepository
 from src.agents.staking.storage import StakingStateRepository
 from src.agents.strategy.storage import StrategyStateRepository
+from src.agents.liquidity.storage import LiquidityStateRepository
 
 
 class Metadata:
@@ -17,6 +18,7 @@ class Metadata:
         self._lending_repo = LendingStateRepository.instance()
         self._staking_repo = StakingStateRepository.instance()
         self._strategy_repo = StrategyStateRepository.instance()
+        self._liquidity_repo = LiquidityStateRepository.instance()
 
     def get_crypto_data_agent(self):
         return self.crypto_data_agent
@@ -201,6 +203,43 @@ class Metadata:
     ):
         try:
             return self._strategy_repo.get_history(user_id, conversation_id, limit)
+        except ValueError:
+            return []
+
+    def get_liquidity_agent(self, user_id: str | None = None, conversation_id: str | None = None):
+        try:
+            return self._liquidity_repo.get_metadata(user_id, conversation_id)
+        except ValueError:
+            return {}
+
+    def set_liquidity_agent(
+        self,
+        liquidity_agent: Dict[str, Any] | None,
+        user_id: str | None = None,
+        conversation_id: str | None = None,
+    ):
+        try:
+            if liquidity_agent:
+                self._liquidity_repo.set_metadata(user_id, conversation_id, liquidity_agent)
+            else:
+                self._liquidity_repo.clear_metadata(user_id, conversation_id)
+        except ValueError:
+            return
+
+    def clear_liquidity_agent(self, user_id: str | None = None, conversation_id: str | None = None) -> None:
+        try:
+            self._liquidity_repo.clear_metadata(user_id, conversation_id)
+        except ValueError:
+            return
+
+    def get_liquidity_history(
+        self,
+        user_id: str | None = None,
+        conversation_id: str | None = None,
+        limit: int | None = None,
+    ):
+        try:
+            return self._liquidity_repo.get_history(user_id, conversation_id, limit)
         except ValueError:
             return []
 

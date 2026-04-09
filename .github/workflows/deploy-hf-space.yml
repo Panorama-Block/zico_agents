@@ -13,6 +13,8 @@ concurrency:
 jobs:
   deploy:
     runs-on: ubuntu-latest
+    env:
+      HF_SPACE_REPO: https://huggingface.co/spaces/ColettoGS/zico-agent
     steps:
       - name: Checkout source repository
         uses: actions/checkout@v4
@@ -31,7 +33,21 @@ jobs:
             exit 1
           fi
 
-          git clone "https://oauth2:${HF_TOKEN}@huggingface.co/spaces/ColettoGS/zico-agent" hf-space
+          AUTHED_REMOTE="https://user:${HF_TOKEN}@${HF_SPACE_REPO#https://}"
+          git clone "$AUTHED_REMOTE" hf-space
+
+      - name: Ensure authenticated Hugging Face remote
+        env:
+          HF_TOKEN: ${{ secrets.HF_TOKEN }}
+        run: |
+          if [ -z "$HF_TOKEN" ]; then
+            echo "Missing required secret: HF_TOKEN"
+            exit 1
+          fi
+
+          cd hf-space
+          AUTHED_REMOTE="https://user:${HF_TOKEN}@${HF_SPACE_REPO#https://}"
+          git remote set-url origin "$AUTHED_REMOTE"
 
       - name: Sync tracked files from new_zico
         run: |
@@ -42,8 +58,17 @@ jobs:
           tar -xf /tmp/new_zico.tar -C hf-space --strip-components=1
 
       - name: Commit and push if changed
+        env:
+          HF_TOKEN: ${{ secrets.HF_TOKEN }}
         run: |
+          if [ -z "$HF_TOKEN" ]; then
+            echo "Missing required secret: HF_TOKEN"
+            exit 1
+          fi
+
           cd hf-space
+          AUTHED_REMOTE="https://user:${HF_TOKEN}@${HF_SPACE_REPO#https://}"
+          git remote set-url origin "$AUTHED_REMOTE"
           git add -A
 
           if git diff --cached --quiet; then
@@ -52,4 +77,7 @@ jobs:
           fi
 
           git commit -m "Deploy from GitHub Actions: ${GITHUB_SHA}"
-          git push origin main
+          if ! git push origin main; then
+            echo "Push to Hugging Face Space failed. Check whether HF_TOKEN is valid and has write access to ColettoGS/zico-agent."
+            exit 1
+          fi

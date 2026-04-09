@@ -2,6 +2,7 @@ import os
 import sys
 import unittest
 from datetime import datetime
+from urllib.parse import quote
 
 ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
 if ROOT not in sys.path:
@@ -132,6 +133,30 @@ class ChatStorageContractTest(unittest.TestCase):
         with self.assertRaises(PanoramaGatewayError):
             client.get("conversations", "u1:c1")
 
+    def test_gateway_client_encodes_colon_containing_composite_ids(self):
+        encoded_id = f"{quote('0:abcd', safe='')}:{quote('c1', safe='')}"
+
+        def handler(request: httpx.Request) -> httpx.Response:
+            if request.method == "GET" and request.url.path == f"/v1/conversations/{encoded_id}":
+                return httpx.Response(
+                    200,
+                    json={
+                        "userId": "0:abcd",
+                        "conversationId": "c1",
+                        "messageCount": 1,
+                    },
+                )
+            raise AssertionError(f"Unexpected request: {request.method} {request.url}")
+
+        client = PanoramaGatewayClient(
+            _settings(),
+            client=httpx.Client(transport=httpx.MockTransport(handler), base_url="http://gateway.local"),
+        )
+
+        record = client.get("conversations", {"userId": "0:abcd", "conversationId": "c1"})
+        self.assertEqual(record["id"], encoded_id)
+        self.assertEqual(record["userId"], "0:abcd")
+
     def test_panorama_store_updates_conversation_with_composite_key(self):
         gateway = _FakeGatewayClient()
         store = PanoramaStore(client=gateway, settings=_settings())
@@ -146,7 +171,7 @@ class ChatStorageContractTest(unittest.TestCase):
         transact_calls = [call for call in gateway.calls if call[0] == "transact"]
         self.assertEqual(len(transact_calls), 1)
         ops = transact_calls[0][3]
-        self.assertEqual(ops[1]["args"]["id"], "u1:c1")
+        self.assertEqual(ops[1]["args"]["id"], {"userId": "u1", "conversationId": "c1"})
 
     def test_chat_manager_raises_on_persist_failure(self):
         manager = ChatManager(store=_FakeStore(should_fail=True))

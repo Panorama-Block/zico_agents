@@ -52,7 +52,9 @@ def _normalize_datetime(value: Any | None) -> Optional[str]:
 
 
 def _conversation_key(user_id: str, conversation_id: str) -> str:
-    return f"{user_id}:{conversation_id}"
+    from urllib.parse import quote
+
+    return f"{quote(user_id, safe='')}:{quote(conversation_id, safe='')}"
 
 
 def _conversation_identifier(user_id: str, conversation_id: str) -> Dict[str, str]:

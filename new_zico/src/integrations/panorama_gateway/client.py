@@ -5,6 +5,7 @@ import time
 import uuid
 from dataclasses import asdict
 import logging
+from urllib.parse import quote
 from typing import Any, Dict, Iterable, Optional
 
 import httpx
@@ -31,7 +32,7 @@ def _canonical_conversation_id(payload: Dict[str, Any]) -> str | None:
         return None
     if not isinstance(conversation_id, str) or not conversation_id:
         return None
-    return f"{user_id}:{conversation_id}"
+    return _encode_identifier({"userId": user_id, "conversationId": conversation_id})
 
 
 def _normalize_entity_record(entity: str, payload: Any) -> Any:
@@ -74,12 +75,15 @@ def _normalize_entity_response(entity: str, payload: Any) -> Any:
 def _encode_identifier(identifier: Any) -> str:
     """Coerce identifiers into the colon-delimited format expected by the gateway."""
 
+    def _encode_part(part: Any) -> str:
+        return quote(str(part), safe="")
+
     if isinstance(identifier, str):
         return identifier
     if isinstance(identifier, dict):
-        return ":".join(str(value) for value in identifier.values())
+        return ":".join(_encode_part(value) for value in identifier.values())
     if isinstance(identifier, Iterable):
-        parts: Iterable[str] = (str(part) for part in identifier)
+        parts: Iterable[str] = (_encode_part(part) for part in identifier)
         return ":".join(parts)
     raise ValueError(f"Unsupported identifier type: {type(identifier)}")
 

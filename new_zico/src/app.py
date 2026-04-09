@@ -18,7 +18,7 @@ from src.graphs.factory import build_graph
 from src.graphs.nodes import initialize_agents
 from src.models.chatMessage import ChatMessage
 from src.routes.chat_manager_routes import router as chat_manager_router
-from src.service.chat_manager import chat_manager_instance
+from src.service.chat_manager import StoragePersistenceError, chat_manager_instance
 from src.agents.crypto_data.tools import get_coingecko_id, get_tradingview_symbol
 from src.agents.metadata import metadata
 
@@ -158,6 +158,26 @@ def _sanitize_user_message_content(content: str | None) -> str | None:
         if candidate:
             return candidate
     return text
+
+
+def _validate_non_empty_user_content(content: str | None, *, user_id: str, conversation_id: str) -> str:
+    cleaned = (content or "").strip()
+    if cleaned:
+        return cleaned
+    logger.warning(
+        "Rejecting empty user message before LLM invocation user=%s conversation=%s",
+        user_id,
+        conversation_id,
+    )
+    raise HTTPException(status_code=400, detail="message.content must be a non-empty string")
+
+
+def _storage_http_exception(exc: StoragePersistenceError) -> HTTPException:
+    logger.warning("Chat storage failure: %s", exc, exc_info=True)
+    return HTTPException(
+        status_code=503,
+        detail="Chat persistence is currently unavailable. Your message was not stored.",
+    )
 
 
 def _resolve_identity(request: ChatRequest) -> tuple[str, str]:
@@ -385,6 +405,11 @@ def chat(request: ChatRequest):
             conversation_id,
             (request.wallet_address or "").strip() if request.wallet_address else None,
         )
+        logger.info(
+            "chat.identity_resolved user_id=%s conversation_id=%s source=chat_endpoint",
+            user_id,
+            conversation_id,
+        )
 
         wallet = request.wallet_address.strip() if request.wallet_address else None
         if wallet and wallet.lower() == "default":
@@ -393,24 +418,33 @@ def chat(request: ChatRequest):
         if isinstance(request.message.metadata, dict):
             display_name = request.message.metadata.get("display_name")
 
-        chat_manager_instance.ensure_session(
-            user_id,
-            conversation_id,
-            wallet_address=wallet,
-            display_name=display_name,
-        )
+        try:
+            chat_manager_instance.ensure_session(
+                user_id,
+                conversation_id,
+                wallet_address=wallet,
+                display_name=display_name,
+            )
+        except StoragePersistenceError as exc:
+            raise _storage_http_exception(exc) from exc
 
         if request.message.role == "user":
             clean_content = _sanitize_user_message_content(request.message.content)
-            if clean_content is not None:
-                request.message.content = clean_content
+            request.message.content = _validate_non_empty_user_content(
+                clean_content,
+                user_id=user_id,
+                conversation_id=conversation_id,
+            )
 
         # Add the user message to the conversation
-        chat_manager_instance.add_message(
-            message=request.message.dict(),
-            conversation_id=conversation_id,
-            user_id=user_id,
-        )
+        try:
+            chat_manager_instance.add_message(
+                message=request.message.dict(),
+                conversation_id=conversation_id,
+                user_id=user_id,
+            )
+        except StoragePersistenceError as exc:
+            raise _storage_http_exception(exc) from exc
 
         # Get all messages from the conversation
         conversation_messages = chat_manager_instance.get_messages(
@@ -448,6 +482,8 @@ def chat(request: ChatRequest):
             return _build_response_payload(result, user_id, conversation_id)
 
         return {"response": "No response available", "agentName": "supervisor"}
+    except StoragePersistenceError as exc:
+        raise _storage_http_exception(exc) from exc
     except HTTPException:
         raise
     except Exception as e:
@@ -724,6 +760,11 @@ async def chat_stream(request: ChatRequest):
         return StreamingResponse(_err(), media_type="text/event-stream")
 
     user_id, conversation_id = uid, cid
+    logger.info(
+        "chat.identity_resolved user_id=%s conversation_id=%s source=chat_stream",
+        user_id,
+        conversation_id,
+    )
 
     wallet = request.wallet_address.strip() if request.wallet_address else None
     if wallet and wallet.lower() == "default":
@@ -733,25 +774,46 @@ async def chat_stream(request: ChatRequest):
         display_name = request.message.metadata.get("display_name")
 
     # Session setup, message persistence, and history fetch (non-blocking)
-    await asyncio.to_thread(
-        chat_manager_instance.ensure_session,
-        user_id,
-        conversation_id,
-        wallet_address=wallet,
-        display_name=display_name,
-    )
+    try:
+        await asyncio.to_thread(
+            chat_manager_instance.ensure_session,
+            user_id,
+            conversation_id,
+            wallet_address=wallet,
+            display_name=display_name,
+        )
+    except StoragePersistenceError as exc:
+        async def _err():
+            yield _sse("error", {"message": _storage_http_exception(exc).detail})
+
+        return StreamingResponse(_err(), media_type="text/event-stream")
 
     if request.message.role == "user":
         clean_content = _sanitize_user_message_content(request.message.content)
-        if clean_content is not None:
-            request.message.content = clean_content
+        try:
+            request.message.content = _validate_non_empty_user_content(
+                clean_content,
+                user_id=user_id,
+                conversation_id=conversation_id,
+            )
+        except HTTPException as exc:
+            async def _err():
+                yield _sse("error", {"message": exc.detail})
 
-    await asyncio.to_thread(
-        chat_manager_instance.add_message,
-        request.message.dict(),
-        conversation_id,
-        user_id,
-    )
+            return StreamingResponse(_err(), media_type="text/event-stream")
+
+    try:
+        await asyncio.to_thread(
+            chat_manager_instance.add_message,
+            request.message.dict(),
+            conversation_id,
+            user_id,
+        )
+    except StoragePersistenceError as exc:
+        async def _err():
+            yield _sse("error", {"message": _storage_http_exception(exc).detail})
+
+        return StreamingResponse(_err(), media_type="text/event-stream")
 
     conversation_messages = await asyncio.to_thread(
         chat_manager_instance.get_messages,
@@ -810,6 +872,24 @@ async def chat_stream_with_files(
     wallet = wallet_address.strip() if wallet_address else None
     if wallet and wallet.lower() == "default":
         wallet = None
+    logger.info(
+        "chat.identity_resolved user_id=%s conversation_id=%s source=chat_stream_with_files",
+        uid,
+        cid,
+    )
+
+    clean_message = _sanitize_user_message_content(message)
+    try:
+        message = _validate_non_empty_user_content(
+            clean_message,
+            user_id=uid,
+            conversation_id=cid,
+        )
+    except HTTPException as exc:
+        async def _err():
+            yield _sse("error", {"message": exc.detail})
+
+        return StreamingResponse(_err(), media_type="text/event-stream")
 
     # --- Process file attachments ---
     file_attachments: List[Dict[str, Any]] = []
@@ -853,19 +933,31 @@ async def chat_stream_with_files(
             return StreamingResponse(_err(), media_type="text/event-stream")
 
     # --- Session setup + persist user message ---
-    await asyncio.to_thread(
-        chat_manager_instance.ensure_session,
-        uid, cid, wallet_address=wallet,
-    )
+    try:
+        await asyncio.to_thread(
+            chat_manager_instance.ensure_session,
+            uid, cid, wallet_address=wallet,
+        )
+    except StoragePersistenceError as exc:
+        async def _err():
+            yield _sse("error", {"message": _storage_http_exception(exc).detail})
+
+        return StreamingResponse(_err(), media_type="text/event-stream")
 
     user_msg = ChatMessage(
         role="user",
         content=message,
         metadata={"source": "miniapp-chat", "has_attachments": True, "attachment_count": len(file_attachments)},
     )
-    await asyncio.to_thread(
-        chat_manager_instance.add_message, user_msg.dict(), cid, uid,
-    )
+    try:
+        await asyncio.to_thread(
+            chat_manager_instance.add_message, user_msg.dict(), cid, uid,
+        )
+    except StoragePersistenceError as exc:
+        async def _err():
+            yield _sse("error", {"message": _storage_http_exception(exc).detail})
+
+        return StreamingResponse(_err(), media_type="text/event-stream")
 
     conversation_messages = await asyncio.to_thread(
         chat_manager_instance.get_messages, cid, uid,
@@ -1059,12 +1151,15 @@ async def chat_audio(
             return await asyncio.to_thread(llm.invoke, [transcription_message])
 
         async def _setup_session_and_history():
-            await asyncio.to_thread(
-                chat_manager_instance.ensure_session,
-                request_user_id,
-                request_conversation_id,
-                wallet_address=wallet,
-            )
+            try:
+                await asyncio.to_thread(
+                    chat_manager_instance.ensure_session,
+                    request_user_id,
+                    request_conversation_id,
+                    wallet_address=wallet,
+                )
+            except StoragePersistenceError as exc:
+                raise _storage_http_exception(exc) from exc
             return await asyncio.to_thread(
                 chat_manager_instance.get_messages,
                 request_conversation_id,
@@ -1117,12 +1212,15 @@ async def chat_audio(
                 "audio_mime_type": mime_type,
             },
         )
-        await asyncio.to_thread(
-            chat_manager_instance.add_message,
-            user_message.dict(),
-            request_conversation_id,
-            request_user_id,
-        )
+        try:
+            await asyncio.to_thread(
+                chat_manager_instance.add_message,
+                user_message.dict(),
+                request_conversation_id,
+                request_user_id,
+            )
+        except StoragePersistenceError as exc:
+            raise _storage_http_exception(exc) from exc
 
         # Re-fetch messages with the newly added user message
         conversation_messages = await asyncio.to_thread(
@@ -1182,6 +1280,8 @@ async def chat_audio(
             "transcription": transcribed_text,
         }
 
+    except StoragePersistenceError as exc:
+        raise _storage_http_exception(exc) from exc
     except HTTPException:
         raise
     except Exception as e:

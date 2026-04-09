@@ -1,6 +1,6 @@
 import logging
 from fastapi import APIRouter, Query, Body, HTTPException
-from src.service.chat_manager import chat_manager_instance
+from src.service.chat_manager import StoragePersistenceError, chat_manager_instance
 from src.agents.config import Config
 from typing import Optional
 from pydantic import BaseModel
@@ -73,7 +73,13 @@ async def create_conversation(
         user_id = "anonymous"
         
     logger.info(f"Creating new conversation for user {user_id}")
-    conversation_id = chat_manager_instance.create_conversation(user_id)
+    try:
+        conversation_id = chat_manager_instance.create_conversation(user_id)
+    except StoragePersistenceError as exc:
+        raise HTTPException(
+            status_code=503,
+            detail="Chat persistence is currently unavailable. Conversation was not created.",
+        ) from exc
     return {"conversation_id": conversation_id}
 
 

@@ -803,8 +803,9 @@ async def chat_stream(request: ChatRequest):
             display_name=display_name,
         )
     except StoragePersistenceError as exc:
+        error_detail = _storage_http_exception(exc).detail
         async def _err():
-            yield _sse("error", {"message": _storage_http_exception(exc).detail})
+            yield _sse("error", {"message": error_detail})
 
         return StreamingResponse(_err(), media_type="text/event-stream")
 
@@ -830,8 +831,9 @@ async def chat_stream(request: ChatRequest):
             user_id,
         )
     except StoragePersistenceError as exc:
+        error_detail = _storage_http_exception(exc).detail
         async def _err():
-            yield _sse("error", {"message": _storage_http_exception(exc).detail})
+            yield _sse("error", {"message": error_detail})
 
         return StreamingResponse(_err(), media_type="text/event-stream")
 
@@ -959,8 +961,9 @@ async def chat_stream_with_files(
             uid, cid, wallet_address=wallet,
         )
     except StoragePersistenceError as exc:
+        error_detail = _storage_http_exception(exc).detail
         async def _err():
-            yield _sse("error", {"message": _storage_http_exception(exc).detail})
+            yield _sse("error", {"message": error_detail})
 
         return StreamingResponse(_err(), media_type="text/event-stream")
 
@@ -974,8 +977,9 @@ async def chat_stream_with_files(
             chat_manager_instance.add_message, user_msg.dict(), cid, uid,
         )
     except StoragePersistenceError as exc:
+        error_detail = _storage_http_exception(exc).detail
         async def _err():
-            yield _sse("error", {"message": _storage_http_exception(exc).detail})
+            yield _sse("error", {"message": error_detail})
 
         return StreamingResponse(_err(), media_type="text/event-stream")
 

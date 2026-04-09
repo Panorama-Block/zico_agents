@@ -76,11 +76,11 @@ def _encode_identifier(identifier: Any) -> str:
 
     if isinstance(identifier, str):
         return identifier
+    if isinstance(identifier, dict):
+        return ":".join(str(value) for value in identifier.values())
     if isinstance(identifier, Iterable):
         parts: Iterable[str] = (str(part) for part in identifier)
         return ":".join(parts)
-    if isinstance(identifier, dict):
-        return ":".join(str(value) for value in identifier.values())
     raise ValueError(f"Unsupported identifier type: {type(identifier)}")
 
 

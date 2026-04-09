@@ -158,7 +158,6 @@ class PanoramaStore:
 
         payload = _drop_none(
             {
-                "id": conv_key,
                 "userId": user_id,
                 "conversationId": conversation_id,
                 "title": title,

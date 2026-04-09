@@ -55,6 +55,10 @@ def _conversation_key(user_id: str, conversation_id: str) -> str:
     return f"{user_id}:{conversation_id}"
 
 
+def _conversation_identifier(user_id: str, conversation_id: str) -> Dict[str, str]:
+    return {"userId": user_id, "conversationId": conversation_id}
+
+
 def _drop_none(data: Dict[str, Any]) -> Dict[str, Any]:
     """Remove keys with None values so the gateway never receives JSON null."""
     return {key: value for key, value in data.items() if value is not None}
@@ -136,8 +140,14 @@ class PanoramaStore:
         title: Optional[str] = None,
     ) -> Dict[str, Any]:
         conv_key = _conversation_key(user_id, conversation_id)
+        conv_identifier = _conversation_identifier(user_id, conversation_id)
+        self._logger.info(
+            "conversation.lookup user_id=%s conversation_id=%s identifier_type=structured",
+            user_id,
+            conversation_id,
+        )
         try:
-            conversation = self._client.get("conversations", conv_key)
+            conversation = self._client.get("conversations", conv_identifier)
         except PanoramaGatewayError as exc:
             if exc.status_code != 404:
                 raise
@@ -187,9 +197,10 @@ class PanoramaStore:
         data = result.get("data", []) if isinstance(result, dict) else []
         return [
             {
-                "id": item.get("conversationId"),
+                "id": item.get("id") or _conversation_key(user_id, item.get("conversationId", "")),
                 "title": item.get("title"),
                 "updated_at": item.get("updatedAt"),
+                "message_count": item.get("messageCount"),
             }
             for item in data
             if item.get("conversationId")
@@ -220,19 +231,29 @@ class PanoramaStore:
         if deletes:
             self._client.transact(deletes)
 
-        conv_key = _conversation_key(user_id, conversation_id)
+        conv_identifier = _conversation_identifier(user_id, conversation_id)
         try:
-            self._client.delete("conversations", conv_key)
+            self._logger.info(
+                "conversation.delete user_id=%s conversation_id=%s identifier_type=structured",
+                user_id,
+                conversation_id,
+            )
+            self._client.delete("conversations", conv_identifier)
         except PanoramaGatewayError as exc:
             if exc.status_code != 404:
                 raise
 
     def update_conversation_title(self, user_id: str, conversation_id: str, title: str) -> None:
         """Update the title of an existing conversation."""
-        conv_key = _conversation_key(user_id, conversation_id)
+        conv_identifier = _conversation_identifier(user_id, conversation_id)
+        self._logger.info(
+            "conversation.update_title user_id=%s conversation_id=%s identifier_type=structured",
+            user_id,
+            conversation_id,
+        )
         self._client.update(
             "conversations",
-            conv_key,
+            conv_identifier,
             {"title": title, "updatedAt": _utc_now_iso()},
         )
 
@@ -250,10 +271,15 @@ class PanoramaStore:
         if deletes:
             self._client.transact(deletes)
 
-        conv_key = _conversation_key(user_id, conversation_id)
+        conv_identifier = _conversation_identifier(user_id, conversation_id)
+        self._logger.info(
+            "conversation.reset user_id=%s conversation_id=%s identifier_type=structured",
+            user_id,
+            conversation_id,
+        )
         self._client.update(
             "conversations",
-            conv_key,
+            conv_identifier,
             {"messageCount": 0, "updatedAt": _utc_now_iso()},
         )
         self._create_disclaimer_message(user_id, conversation_id)
@@ -330,13 +356,20 @@ class PanoramaStore:
             generated_title = (content[:47] + "...") if len(content) > 50 else content
             conversation_updates["title"] = generated_title
 
+        conversation_record_id = _conversation_identifier(user_id, conversation_id)
+        self._logger.info(
+            "conversation.update_after_message user_id=%s conversation_id=%s identifier_type=structured",
+            user_id,
+            conversation_id,
+        )
+
         operations = [
             {"op": "create", "entity": "messages", "args": {"data": message_payload}},
             {
                 "op": "update",
                 "entity": "conversations",
                 "args": {
-                    "id": conversation["id"],
+                    "id": conversation_record_id,
                     "data": conversation_updates,
                 },
             },
@@ -444,12 +477,21 @@ class PanoramaStore:
         Returns:
             Updated conversation data
         """
-        conv_key = _conversation_key(user_id, conversation_id)
+        conv_identifier = _conversation_identifier(user_id, conversation_id)
         try:
-            conversation = self._client.get("conversations", conv_key)
+            self._logger.info(
+                "conversation.costs_get user_id=%s conversation_id=%s identifier_type=structured",
+                user_id,
+                conversation_id,
+            )
+            conversation = self._client.get("conversations", conv_identifier)
         except PanoramaGatewayError as exc:
             if exc.status_code == 404:
-                self._logger.warning("Conversation %s not found for cost update", conv_key)
+                self._logger.warning(
+                    "Conversation not found for cost update user_id=%s conversation_id=%s",
+                    user_id,
+                    conversation_id,
+                )
                 return {}
             raise
 
@@ -481,13 +523,14 @@ class PanoramaStore:
         try:
             return self._client.update(
                 "conversations",
-                conv_key,
+                conv_identifier,
                 {"contextState": context_state, "updatedAt": _utc_now_iso()},
             )
         except PanoramaGatewayError as exc:
             self._logger.error(
-                "Failed to update costs for conversation %s: status=%s",
-                conv_key,
+                "Failed to update costs for user=%s conversation=%s: status=%s",
+                user_id,
+                conversation_id,
                 exc.status_code,
             )
             raise
@@ -507,9 +550,14 @@ class PanoramaStore:
         Returns:
             Cost data or empty dict if not found
         """
-        conv_key = _conversation_key(user_id, conversation_id)
+        conv_identifier = _conversation_identifier(user_id, conversation_id)
         try:
-            conversation = self._client.get("conversations", conv_key)
+            self._logger.info(
+                "conversation.costs_read user_id=%s conversation_id=%s identifier_type=structured",
+                user_id,
+                conversation_id,
+            )
+            conversation = self._client.get("conversations", conv_identifier)
         except PanoramaGatewayError as exc:
             if exc.status_code == 404:
                 return {}

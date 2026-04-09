@@ -24,6 +24,53 @@ class PanoramaGatewayError(RuntimeError):
         self.payload = payload
 
 
+def _canonical_conversation_id(payload: Dict[str, Any]) -> str | None:
+    user_id = payload.get("userId")
+    conversation_id = payload.get("conversationId")
+    if not isinstance(user_id, str) or not user_id:
+        return None
+    if not isinstance(conversation_id, str) or not conversation_id:
+        return None
+    return f"{user_id}:{conversation_id}"
+
+
+def _normalize_entity_record(entity: str, payload: Any) -> Any:
+    if not isinstance(payload, dict):
+        return payload
+
+    if entity == "conversations":
+        canonical_id = _canonical_conversation_id(payload)
+        if not canonical_id:
+            logger.error(
+                "Panorama contract mismatch entity=%s keys=%s payload=%s",
+                entity,
+                sorted(payload.keys()),
+                PanoramaGatewayClient._truncate_payload(payload),
+            )
+            raise PanoramaGatewayError(
+                "Gateway contract mismatch for conversations",
+                502,
+                payload,
+            )
+        return {
+            **payload,
+            "id": canonical_id,
+        }
+
+    return payload
+
+
+def _normalize_entity_response(entity: str, payload: Any) -> Any:
+    if isinstance(payload, dict) and isinstance(payload.get("data"), list):
+        return {
+            **payload,
+            "data": [_normalize_entity_record(entity, item) for item in payload["data"]],
+        }
+    if isinstance(payload, list):
+        return [_normalize_entity_record(entity, item) for item in payload]
+    return _normalize_entity_record(entity, payload)
+
+
 def _encode_identifier(identifier: Any) -> str:
     """Coerce identifiers into the colon-delimited format expected by the gateway."""
 
@@ -188,11 +235,13 @@ class PanoramaGatewayClient:
                     params[key] = json.dumps(value)
                 else:
                     params[key] = value
-        return self._request("GET", f"/v1/{entity}", params=params)
+        response = self._request("GET", f"/v1/{entity}", params=params)
+        return _normalize_entity_response(entity, response)
 
     def get(self, entity: str, identifier: Any) -> Any:
         encoded_id = _encode_identifier(identifier)
-        return self._request("GET", f"/v1/{entity}/{encoded_id}")
+        response = self._request("GET", f"/v1/{entity}/{encoded_id}")
+        return _normalize_entity_response(entity, response)
 
     def create(
         self,
@@ -201,12 +250,13 @@ class PanoramaGatewayClient:
         *,
         idempotency_key: str | None = None,
     ) -> Any:
-        return self._request(
+        response = self._request(
             "POST",
             f"/v1/{entity}",
             json_body=payload,
             idempotency_key=idempotency_key,
         )
+        return _normalize_entity_response(entity, response)
 
     def update(
         self,
@@ -217,12 +267,13 @@ class PanoramaGatewayClient:
         idempotency_key: str | None = None,
     ) -> Any:
         encoded_id = _encode_identifier(identifier)
-        return self._request(
+        response = self._request(
             "PATCH",
             f"/v1/{entity}/{encoded_id}",
             json_body=payload,
             idempotency_key=idempotency_key,
         )
+        return _normalize_entity_response(entity, response)
 
     def delete(
         self,
@@ -245,12 +296,20 @@ class PanoramaGatewayClient:
         idempotency_key: str | None = None,
     ) -> Any:
         payload = {"ops": list(operations)}
-        return self._request(
+        response = self._request(
             "POST",
             "/v1/_transact",
             json_body=payload,
             idempotency_key=idempotency_key,
         )
+        if isinstance(response, dict) and "data" in response:
+            normalized_items = []
+            ops_list = payload["ops"]
+            for idx, item in enumerate(response.get("data", [])):
+                entity = ops_list[idx].get("entity", "") if idx < len(ops_list) else ""
+                normalized_items.append(_normalize_entity_record(entity, item))
+            return {**response, "data": normalized_items}
+        return response
 
     def to_dict(self) -> Dict[str, Any]:
         """Return a serialisable snapshot of the current settings (useful for debugging)."""

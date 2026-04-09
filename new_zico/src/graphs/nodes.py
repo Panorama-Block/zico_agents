@@ -172,6 +172,30 @@ def entry_node(state: AgentState) -> dict:
     user_id = state.get("user_id")
     conversation_id = state.get("conversation_id")
 
+    def _normalize_message_content(content: Any) -> Any:
+        if isinstance(content, str):
+            cleaned = content.strip()
+            return cleaned or None
+        if isinstance(content, list):
+            cleaned_parts: List[Any] = []
+            for part in content:
+                if isinstance(part, str):
+                    stripped = part.strip()
+                    if stripped:
+                        cleaned_parts.append(stripped)
+                    continue
+                if isinstance(part, dict):
+                    normalized_part = dict(part)
+                    text_value = normalized_part.get("text")
+                    if isinstance(text_value, str):
+                        normalized_part["text"] = text_value.strip()
+                    has_text = bool(str(normalized_part.get("text", "")).strip())
+                    has_data = bool(normalized_part.get("data"))
+                    if has_text or has_data:
+                        cleaned_parts.append(normalized_part)
+            return cleaned_parts or None
+        return content if content else None
+
     # Conversation windowing
     fast_llm = Config.get_fast_llm(with_cost_tracking=True)
     windowed = prepare_context(messages, max_recent=8, summarizer_llm=fast_llm)
@@ -183,7 +207,9 @@ def entry_node(state: AgentState) -> dict:
     langchain_messages: List[Any] = []
     for msg in windowed:
         role = msg.get("role")
-        content = msg.get("content", "")
+        content = _normalize_message_content(msg.get("content", ""))
+        if content is None:
+            continue
         if role == "user":
             langchain_messages.append(HumanMessage(content=content))
         elif role == "system":
@@ -217,8 +243,10 @@ def entry_node(state: AgentState) -> dict:
     last_user_msg = ""
     for msg in reversed(windowed):
         if msg.get("role") == "user":
-            last_user_msg = (msg.get("content") or "").strip()
-            break
+            normalized = _normalize_message_content(msg.get("content") or "")
+            if isinstance(normalized, str):
+                last_user_msg = normalized
+                break
 
     # Active DeFi flow?
     has_active_defi = any(
@@ -238,16 +266,18 @@ def entry_node(state: AgentState) -> dict:
                 original_content = langchain_messages[i].content
                 # Ensure original_text is a string (content could already be a list)
                 if isinstance(original_content, str):
-                    original_text = original_content
+                    original_text = original_content.strip()
                 elif isinstance(original_content, list):
                     original_text = " ".join(
                         p.get("text", "") if isinstance(p, dict) else str(p)
                         for p in original_content
-                    )
+                    ).strip()
                 else:
-                    original_text = str(original_content)
+                    original_text = str(original_content).strip()
 
-                content_blocks: List[Dict[str, Any]] = [{"type": "text", "text": original_text}]
+                content_blocks: List[Dict[str, Any]] = []
+                if original_text:
+                    content_blocks.append({"type": "text", "text": original_text})
                 for att in file_attachments:
                     if att["type"] == "image":
                         content_blocks.append({
@@ -267,8 +297,9 @@ def entry_node(state: AgentState) -> dict:
                                 "type": "text",
                                 "text": f"\n\n[Document attached: {att['filename']} — text extraction failed or document is empty]",
                             })
-                langchain_messages[i] = HumanMessage(content=content_blocks)
-                break
+                if content_blocks:
+                    langchain_messages[i] = HumanMessage(content=content_blocks)
+                    break
 
     return {
         "windowed_messages": windowed,
@@ -401,11 +432,21 @@ Respond with ONLY the agent name (e.g. "crypto_agent"). Nothing else."""
 
 def llm_router_node(state: AgentState) -> dict:
     """Use a single LLM call to disambiguate low-confidence intents."""
-    last_msg = state.get("last_user_message", "")
+    raw_last_msg = state.get("last_user_message")
+    last_msg = raw_last_msg.strip() if isinstance(raw_last_msg, str) else ""
     nodes = list(state.get("nodes_executed", []))
     nodes.append("llm_router_node")
 
     llm = Config.get_fast_llm(with_cost_tracking=True)
+
+    if not last_msg:
+        logger.warning("LLM router skipped because last_user_message is empty; defaulting to default_agent.")
+        return {
+            "route_agent": "default_agent",
+            "route_confidence": 0.0,
+            "needs_llm_confirmation": False,
+            "nodes_executed": nodes,
+        }
 
     try:
         response = llm.invoke([
@@ -652,6 +693,39 @@ def _invoke_simple_agent(agent_key: str, state: AgentState, config: RunnableConf
     else:
         invoke_messages = langchain_messages
 
+    def _has_user_content(message: Any) -> bool:
+        if not isinstance(message, HumanMessage):
+            return False
+        content = message.content
+        if isinstance(content, str):
+            return bool(content.strip())
+        if isinstance(content, list):
+            return any(
+                (
+                    isinstance(part, str) and bool(part.strip())
+                ) or (
+                    isinstance(part, dict) and (
+                        bool(str(part.get("text", "")).strip())
+                        or bool(part.get("data"))
+                    )
+                )
+                for part in content
+            )
+        return bool(content)
+
+    if not any(_has_user_content(msg) for msg in invoke_messages):
+        logger.warning(
+            "Skipping %s invocation because no non-empty HumanMessage is available in state.",
+            agent_key,
+        )
+        return {
+            "final_response": "I didn't receive a valid user message for this turn. Please send your request again.",
+            "response_agent": agent_key,
+            "response_metadata": {},
+            "raw_agent_messages": [],
+            "nodes_executed": nodes,
+        }
+
     try:
         with portfolio_session(user_id=user_id, conversation_id=conversation_id, wallet_address=wallet_address):
             response = agent.invoke({"messages": invoke_messages}, config=config)
@@ -718,6 +792,23 @@ def portfolio_advisor_node(state: AgentState, config: RunnableConfig | None = No
         scoped_messages.append(SystemMessage(content=agent_directive))
 
     scoped_messages.extend(langchain_messages)
+
+    if not any(isinstance(msg, HumanMessage) and (
+        bool(msg.content.strip()) if isinstance(msg.content, str)
+        else any(
+            (isinstance(part, str) and bool(part.strip()))
+            or (isinstance(part, dict) and (bool(str(part.get("text", "")).strip()) or bool(part.get("data"))))
+            for part in (msg.content or [])
+        )
+    ) for msg in scoped_messages):
+        logger.warning("Skipping portfolio_advisor invocation because no non-empty HumanMessage is available in state.")
+        return {
+            "final_response": "I didn't receive a valid user message for this turn. Please send your request again.",
+            "response_agent": "portfolio_advisor",
+            "response_metadata": {},
+            "raw_agent_messages": [],
+            "nodes_executed": nodes,
+        }
 
     try:
         with portfolio_session(user_id=user_id, conversation_id=conversation_id, wallet_address=wallet_address):

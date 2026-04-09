@@ -10,6 +10,10 @@ from src.service.panorama_store import PanoramaStore
 logger = logging.getLogger(__name__)
 
 
+class StoragePersistenceError(RuntimeError):
+    """Raised when chat state cannot be durably persisted."""
+
+
 class ChatManager:
     """Facade that delegates chat persistence to the Panorama data gateway."""
 
@@ -89,7 +93,9 @@ class ChatManager:
                 conversation_id,
                 exc,
             )
-            return chat_message.dict()
+            raise StoragePersistenceError(
+                f"Failed to persist message for user={user_id} conversation={conversation_id}"
+            ) from exc
 
     def add_response(
         self,
@@ -201,6 +207,9 @@ class ChatManager:
                 conversation_id,
                 exc,
             )
+            raise StoragePersistenceError(
+                f"Failed to create conversation for user={user_id}"
+            ) from exc
         return conversation_id
 
     # ---- Discovery helpers ------------------------------------------------
@@ -246,6 +255,9 @@ class ChatManager:
                 conversation_id,
                 exc,
             )
+            raise StoragePersistenceError(
+                f"Failed to ensure session for user={user_id} conversation={conversation_id}"
+            ) from exc
 
     # ---- Cost tracking ----------------------------------------------------
     def update_conversation_costs(

@@ -528,8 +528,8 @@ def fetch_strategy_candidates_tool(**kwargs) -> Dict[str, Any]:
                 "strategy_id": strategy.get("strategy_id"),
                 "name": strategy.get("name"),
                 "category": strategy.get("category"),
+                "capability": strategy.get("handoff_mapping"),
                 "risk_profile": risk_profile,
-                "protocols": strategy.get("protocols"),
                 "score": round(score, 4),
                 "fit_rationale": reasons,
                 "exclusions": exclusions,
@@ -769,7 +769,7 @@ def prepare_strategy_handoff_tool(**kwargs) -> Dict[str, Any]:
         "strategy_id": strategy.get("strategy_id"),
         "strategy_name": strategy.get("name"),
         "risk_profile": strategy.get("risk_profile"),
-        "protocols": strategy.get("protocols"),
+        "capability": mapping,
     }
 
     cap_req = strategy.get("capital_requirements") or {}

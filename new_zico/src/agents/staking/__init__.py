@@ -1,1 +1,1 @@
-"""Staking agent for Lido on Ethereum."""
+"""Staking agent — speaks the `staking` capability vocabulary (stake/unstake ETH on Ethereum)."""

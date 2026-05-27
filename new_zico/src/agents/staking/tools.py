@@ -1,4 +1,8 @@
-"""Staking tools that manage a conversational staking intent for Lido on Ethereum."""
+"""Staking tools that manage a conversational staking intent for the `staking` capability.
+
+Provider routing is the backend's job — tool descriptions and outputs stay in
+capability vocabulary. See agent-capability-contract.md.
+"""
 
 from __future__ import annotations
 
@@ -260,7 +264,7 @@ def update_staking_intent_tool(
     fields that were mentioned in the latest message (leave the others as None)
     and keep calling it until the response event becomes 'staking_intent_ready'.
 
-    Staking is done via Lido protocol on Ethereum Mainnet:
+    Staking operations supported by the `staking` capability on Ethereum:
     - stake: Convert ETH to stETH and start earning rewards
     - unstake: Convert stETH back to ETH
     """
@@ -321,7 +325,7 @@ def update_staking_intent_tool(
 
 @tool("get_staking_info")
 def get_staking_info_tool():
-    """Get information about the staking service (Lido on Ethereum).
+    """Get information about the `staking` capability.
 
     Returns details about the supported staking protocol, network, and tokens.
     """
@@ -346,7 +350,7 @@ def get_staking_info_tool():
             "stake": StakingConfig.MIN_STAKE_AMOUNT,
             "unstake": StakingConfig.MIN_UNSTAKE_AMOUNT,
         },
-        "info": "Lido is a liquid staking solution for Ethereum. When you stake ETH, you receive stETH which accrues staking rewards automatically.",
+        "info": "Liquid staking lets you stake ETH and receive stETH, which accrues staking rewards automatically. You can unstake anytime to convert back to ETH.",
     }
 
 

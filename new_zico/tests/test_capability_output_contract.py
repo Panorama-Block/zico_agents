@@ -183,6 +183,34 @@ class StrategyOutputContractTest(unittest.TestCase):
         )
 
 
+class StakingOutputContractTest(unittest.TestCase):
+    """Staking agent must not surface provider names in user-facing text."""
+
+    def test_staking_prompt_has_no_protocol_names(self) -> None:
+        from src.agents.staking.prompt import STAKING_AGENT_SYSTEM_PROMPT
+
+        _assert_no_banned_names(self, STAKING_AGENT_SYSTEM_PROMPT, "staking prompt")
+
+    def test_staking_prompt_uses_capability_vocabulary(self) -> None:
+        from src.agents.staking.prompt import STAKING_AGENT_SYSTEM_PROMPT
+
+        self.assertIn("capability", STAKING_AGENT_SYSTEM_PROMPT.lower())
+
+
+class LendingOutputContractTest(unittest.TestCase):
+    """Lending agent must not surface provider names in user-facing text."""
+
+    def test_lending_prompt_has_no_protocol_names(self) -> None:
+        from src.agents.lending.prompt import LENDING_AGENT_SYSTEM_PROMPT
+
+        _assert_no_banned_names(self, LENDING_AGENT_SYSTEM_PROMPT, "lending prompt")
+
+    def test_lending_prompt_uses_capability_vocabulary(self) -> None:
+        from src.agents.lending.prompt import LENDING_AGENT_SYSTEM_PROMPT
+
+        self.assertIn("lending", LENDING_AGENT_SYSTEM_PROMPT.lower())
+
+
 class SemanticRouterExemplarsTest(unittest.TestCase):
     """Card #68 — routing exemplars must not contain banned protocol names."""
 

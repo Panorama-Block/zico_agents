@@ -7,7 +7,7 @@ logger = logging.getLogger(__name__)
 
 
 class StakingAgent:
-    """Agent for handling staking operations (stake ETH, unstake stETH) via Lido on Ethereum."""
+    """Agent for the `staking` capability — handles stake/unstake ETH intents on Ethereum."""
     def __init__(self, llm):
         self.llm = llm
         self.agent = create_react_agent(

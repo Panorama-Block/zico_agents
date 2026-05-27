@@ -1,13 +1,18 @@
-"""Configuration for the Liquidity Agent (Aerodrome on Base)."""
+"""Configuration for the Liquidity Agent.
+
+The constants in this file are internal — they support backend routing and dev tooling.
+The agent's user-facing text MUST NOT surface them. See agent-capability-contract.md §3.
+"""
 from typing import Dict, List, Optional
 
 
 class LiquidityConfig:
-    """Static configuration for Aerodrome LP + Farming on Base."""
+    """Static configuration for the `liquidity` capability (currently Base-only)."""
 
     NETWORK = "base"
     CHAIN_ID = 8453
-    PROTOCOL = "aerodrome"
+    CAPABILITY = "liquidity"
+    PROTOCOL = "aerodrome"  # internal backend hint; never surfaced in user-facing text
 
     SUPPORTED_ACTIONS = [
         "enter",

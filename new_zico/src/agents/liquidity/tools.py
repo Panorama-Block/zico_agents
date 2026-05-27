@@ -1,4 +1,8 @@
-"""Liquidity tools that manage a conversational liquidity intent for Aerodrome on Base."""
+"""Liquidity tools that manage a conversational liquidity intent for the `liquidity` capability.
+
+Provider routing is the backend's job — tool descriptions and outputs MUST stay in
+capability vocabulary (no DEX, farm, or protocol names). See agent-capability-contract.md.
+"""
 
 from __future__ import annotations
 
@@ -515,10 +519,10 @@ def update_liquidity_intent_tool(
     fields that were mentioned in the latest message (leave the others as None)
     and keep calling it until the response event becomes 'liquidity_intent_ready'.
 
-    Liquidity operations are done via Aerodrome Finance on Base:
-    - enter: add liquidity and stake LP position
-    - exit: unstake/remove LP position
-    - claim: claim rewards
+    Liquidity operations supported by the `liquidity` capability:
+    - enter: add liquidity and stake the resulting LP position
+    - exit: unstake/remove an LP position
+    - claim: claim accrued farming rewards
     """
 
     resolved_user, resolved_conversation = _resolve_session(user_id, conversation_id)
@@ -627,9 +631,10 @@ def update_liquidity_intent_tool(
 
 @tool("get_liquidity_info")
 def get_liquidity_info_tool():
-    """Get information about the liquidity/farming service (Aerodrome on Base).
+    """Get information about the `liquidity` capability.
 
-    Returns details about the supported protocol, pools, and actions.
+    Returns the supported actions, available pools and amount constraints.
+    The backend decides which provider serves each pool — that detail is not exposed here.
     """
     pools_info = {}
     for pid, pool in LiquidityConfig.POOLS.items():
@@ -642,7 +647,7 @@ def get_liquidity_info_tool():
         }
 
     return {
-        "protocol": LiquidityConfig.PROTOCOL,
+        "capability": LiquidityConfig.CAPABILITY,
         "network": LiquidityConfig.NETWORK,
         "chain_id": LiquidityConfig.CHAIN_ID,
         "supported_actions": LiquidityConfig.SUPPORTED_ACTIONS,
@@ -650,17 +655,17 @@ def get_liquidity_info_tool():
         "pools": pools_info,
         "min_amount": LiquidityConfig.MIN_AMOUNT,
         "info": (
-            "Aerodrome is the dominant DEX on Base. You can provide liquidity to pools "
-            "and earn trading fees. Stake your LP tokens in Gauges to earn additional AERO rewards. "
-            "Volatile pools (e.g. WETH-USDC) have higher potential returns but impermanent loss risk. "
-            "Stable pools (e.g. USDC-USDbC) have lower returns but minimal impermanent loss."
+            "You can provide liquidity to supported pools and earn trading fees. "
+            "Eligible positions can be staked to earn additional farming rewards. "
+            "Volatile pools (e.g. WETH-USDC) offer higher potential returns but carry impermanent-loss risk. "
+            "Stable pools (e.g. USDC-USDbC) offer lower returns with minimal impermanent loss."
         ),
     }
 
 
 @tool("get_liquidity_pool_availability")
 def get_liquidity_pool_availability_tool():
-    """Compute which Aerodrome pools on Base can be used with the current wallet balances.
+    """Compute which liquidity pools on Base can be used with the current wallet balances.
 
     Uses get_user_portfolio and filters only Base assets. For WETH requirements,
     ETH and WETH balances are both considered available (wrap step implied).

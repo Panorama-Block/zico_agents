@@ -7,7 +7,10 @@ logger = logging.getLogger(__name__)
 
 
 class LiquidityAgent:
-    """Agent for handling liquidity operations (add/remove liquidity, stake/unstake, claim rewards) via Aerodrome on Base."""
+    """Agent for the `liquidity` capability — handles add/remove LP and claim-rewards intents.
+
+    Provider routing happens at the backend; this agent only emits CapabilityIntent payloads.
+    """
     def __init__(self, llm):
         self.llm = llm
         self.agent = create_react_agent(

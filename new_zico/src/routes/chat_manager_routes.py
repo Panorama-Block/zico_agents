@@ -1,6 +1,10 @@
 import logging
 from fastapi import APIRouter, Query, Body, HTTPException
-from src.service.chat_manager import StoragePersistenceError, chat_manager_instance
+from src.service.chat_manager import (
+    ConversationNotFoundError,
+    StoragePersistenceError,
+    chat_manager_instance,
+)
 from src.agents.config import Config
 from typing import Optional
 from pydantic import BaseModel
@@ -21,16 +25,22 @@ class UserIdRequest(BaseModel):
 
 @router.get("/messages")
 async def get_messages(conversation_id: str = Query(default="default"), user_id: str = Query(default="anonymous")):
-    """Get all chat messages for a conversation"""
+    """Get all chat messages for a conversation without mutating persistence."""
     logger.info(f"Received get_messages request for conversation {conversation_id} from user {user_id}")
     return {"messages": chat_manager_instance.get_messages(conversation_id, user_id)}
 
 
 @router.get("/clear")
 async def clear_messages(conversation_id: str = Query(default="default"), user_id: str = Query(default="anonymous")):
-    """Clear chat message history for a conversation"""
+    """Clear chat message history for a conversation."""
     logger.info(f"Clearing message history for conversation {conversation_id} for user {user_id}")
-    chat_manager_instance.clear_messages(conversation_id, user_id)
+    try:
+        chat_manager_instance.clear_messages(conversation_id, user_id)
+    except StoragePersistenceError as exc:
+        raise HTTPException(
+            status_code=503,
+            detail="Chat persistence is currently unavailable. Conversation was not cleared.",
+        ) from exc
     return {"response": "successfully cleared message history"}
 
 
@@ -39,7 +49,7 @@ async def get_conversations(
     user_id_query: str = Query(default=None, alias="user_id"),
     user_id_str: Optional[str] = Body(default=None)
 ):
-    """Get all conversations (with titles) for a specific user"""
+    """Get all conversations using domain conversation IDs, not gateway resource IDs."""
     user_id = user_id_str if user_id_str else user_id_query
 
     if not user_id:
@@ -71,7 +81,7 @@ async def create_conversation(
 
     if not user_id:
         user_id = "anonymous"
-        
+
     logger.info(f"Creating new conversation for user {user_id}")
     try:
         conversation_id = chat_manager_instance.create_conversation(user_id)
@@ -89,16 +99,23 @@ async def delete_conversation(
     user_id_query: str = Query(default=None, alias="user_id"),
     user_id_body: Dict[str, str] = Body(default=None)
 ):
-    """Delete a conversation by ID"""
-    # Get user_id from body if it exists, otherwise from query
+    """Delete a persisted conversation by its domain conversation ID."""
     user_id = user_id_body.get("user_id") if user_id_body else user_id_query
 
     if not user_id:
         user_id = "anonymous"
-        
+
     logger.info(f"Deleting conversation {conversation_id} for user {user_id}")
-    chat_manager_instance.delete_conversation(conversation_id, user_id)
-    return {"response": "successfully deleted conversation"}
+    try:
+        chat_manager_instance.delete_conversation(conversation_id, user_id)
+    except ConversationNotFoundError as exc:
+        raise HTTPException(status_code=404, detail="Conversation not found.") from exc
+    except StoragePersistenceError as exc:
+        raise HTTPException(
+            status_code=503,
+            detail="Chat persistence is currently unavailable. Conversation was not deleted.",
+        ) from exc
+    return {"response": "successfully deleted conversation", "conversation_id": conversation_id}
 
 
 class GenerateTitleRequest(BaseModel):
@@ -118,7 +135,6 @@ async def generate_title(body: GenerateTitleRequest):
         prompt = _TITLE_PROMPT.format(message=body.message[:500])
         result = llm.invoke(prompt)
         title = (result.content if hasattr(result, "content") else str(result)).strip().strip('"\'')
-        # Enforce 8-word max
         words = title.split()
         if len(words) > 8:
             title = " ".join(words[:8])

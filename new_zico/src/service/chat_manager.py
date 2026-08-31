@@ -5,6 +5,7 @@ import uuid
 from typing import Dict, List, Optional
 
 from src.models.chatMessage import AgentResponse, ChatMessage
+from src.service.chat_persistence_store import ChatPersistenceStore
 from src.service.panorama_store import PanoramaStore
 
 logger = logging.getLogger(__name__)
@@ -14,11 +15,15 @@ class StoragePersistenceError(RuntimeError):
     """Raised when chat state cannot be durably persisted."""
 
 
+class ConversationNotFoundError(RuntimeError):
+    """Raised when a requested persisted conversation does not exist."""
+
+
 class ChatManager:
     """Facade that delegates chat persistence to the Panorama data gateway."""
 
     def __init__(self, store: PanoramaStore | None = None) -> None:
-        self._store = store or PanoramaStore()
+        self._store = store or ChatPersistenceStore()
 
     @staticmethod
     def _resolve_ids(
@@ -35,9 +40,9 @@ class ChatManager:
     ) -> List[Dict[str, str]]:
         conversation_id, user_id = self._resolve_ids(conversation_id, user_id)
         try:
-            self._store.ensure_conversation(user_id, conversation_id)
-            messages = self._store.list_messages(user_id, conversation_id)
-            return messages
+            # Reads must never create storage. A missing conversation simply
+            # yields an empty history; creation belongs to explicit mutations.
+            return self._store.list_messages(user_id, conversation_id)
         except Exception as exc:
             logger.warning(
                 "Failed to fetch messages for user=%s conversation=%s: %s",
@@ -138,7 +143,6 @@ class ChatManager:
     ) -> None:
         conversation_id, user_id = self._resolve_ids(conversation_id, user_id)
         try:
-            self._store.ensure_conversation(user_id, conversation_id)
             self._store.reset_conversation(user_id, conversation_id)
             logger.info(
                 "Cleared messages for user=%s conversation=%s",
@@ -152,6 +156,9 @@ class ChatManager:
                 conversation_id,
                 exc,
             )
+            raise StoragePersistenceError(
+                f"Failed to clear messages for user={user_id} conversation={conversation_id}"
+            ) from exc
 
     def delete_conversation(
         self,
@@ -160,12 +167,18 @@ class ChatManager:
     ) -> None:
         conversation_id, user_id = self._resolve_ids(conversation_id, user_id)
         try:
-            self._store.delete_conversation(user_id, conversation_id)
+            deleted = self._store.delete_conversation(user_id, conversation_id)
+            if deleted is False:
+                raise ConversationNotFoundError(
+                    f"Conversation not found for user={user_id} conversation={conversation_id}"
+                )
             logger.info(
                 "Deleted conversation for user=%s conversation=%s",
                 user_id,
                 conversation_id,
             )
+        except ConversationNotFoundError:
+            raise
         except Exception as exc:
             logger.warning(
                 "Failed to delete conversation for user=%s conversation=%s: %s",
@@ -173,6 +186,9 @@ class ChatManager:
                 conversation_id,
                 exc,
             )
+            raise StoragePersistenceError(
+                f"Failed to delete conversation for user={user_id} conversation={conversation_id}"
+            ) from exc
 
     def update_conversation_title(
         self,

@@ -1,0 +1,47 @@
+name: Chat Persistence Contract
+
+on:
+  pull_request:
+    paths:
+      - 'new_zico/src/service/chat_manager.py'
+      - 'new_zico/src/service/chat_persistence_store.py'
+      - 'new_zico/src/service/panorama_store.py'
+      - 'new_zico/src/integrations/panorama_gateway/**'
+      - 'new_zico/src/routes/chat_manager_routes.py'
+      - 'new_zico/tests/test_chat_storage_contract.py'
+      - 'new_zico/tests/test_chat_persistence_public_contract.py'
+      - '.github/workflows/chat-persistence-contract.yml'
+  push:
+    branches:
+      - 'fix/chat-persistence-contract'
+    paths:
+      - 'new_zico/**'
+      - '.github/workflows/chat-persistence-contract.yml'
+
+jobs:
+  contract-tests:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: new_zico
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+          cache: 'pip'
+          cache-dependency-path: new_zico/requirements.txt
+      - name: Install contract-test dependencies
+        run: python -m pip install --upgrade pip 'pydantic<3' httpx PyJWT
+      - name: Compile changed persistence modules
+        run: |
+          python -m py_compile \
+            src/service/chat_manager.py \
+            src/service/chat_persistence_store.py \
+            src/routes/chat_manager_routes.py \
+            scripts/audit_chat_persistence.py
+      - name: Run storage contract tests
+        run: |
+          python -m unittest \
+            tests.test_chat_storage_contract \
+            tests.test_chat_persistence_public_contract

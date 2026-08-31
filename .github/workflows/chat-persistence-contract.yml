@@ -21,6 +21,9 @@ on:
 jobs:
   contract-tests:
     runs-on: ubuntu-latest
+    env:
+      PANORAMA_GATEWAY_URL: http://gateway.local
+      PANORAMA_GATEWAY_JWT_SECRET: contract-test-secret
     defaults:
       run:
         working-directory: new_zico

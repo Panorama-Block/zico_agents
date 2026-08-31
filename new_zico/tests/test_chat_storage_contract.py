@@ -137,7 +137,8 @@ class ChatStorageContractTest(unittest.TestCase):
         encoded_id = f"{quote('0:abcd', safe='')}:{quote('c1', safe='')}"
 
         def handler(request: httpx.Request) -> httpx.Response:
-            if request.method == "GET" and request.url.path == f"/v1/conversations/{encoded_id}":
+            raw_path = request.url.raw_path.decode()
+            if request.method == "GET" and raw_path == f"/v1/conversations/{encoded_id}":
                 return httpx.Response(
                     200,
                     json={

@@ -5,7 +5,7 @@ import os
 import time
 from typing import Any, Dict, List, Literal, Optional
 
-from fastapi import FastAPI, File, Form, HTTPException, Request, UploadFile
+from fastapi import Depends, FastAPI, File, Form, HTTPException, Request, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import StreamingResponse
 from langchain_core.messages import HumanMessage
@@ -20,6 +20,7 @@ from src.models.chatMessage import ChatMessage
 from src.routes.chat_manager_routes import router as chat_manager_router
 from src.diagnostics.routes import router as diagnostics_router
 from src.service.chat_manager import StoragePersistenceError, chat_manager_instance
+from src.security.chat_auth import PanoramaPrincipal, require_chat_principal
 from src.agents.crypto_data.tools import get_coingecko_id, get_tradingview_symbol
 from src.agents.metadata import metadata
 
@@ -184,19 +185,12 @@ def _storage_http_exception(exc: StoragePersistenceError) -> HTTPException:
     )
 
 
-def _resolve_identity(request: ChatRequest) -> tuple[str, str]:
-    """Ensure each request has a stable user and conversation identifier."""
-    user_id = (request.user_id or "").strip()
-    if not user_id or user_id.lower() == "anonymous":
-        wallet = (request.wallet_address or "").strip()
-        if wallet and wallet.lower() != "default":
-            user_id = f"wallet::{wallet.lower()}"
-        else:
-            raise HTTPException(
-                status_code=400,
-                detail="A stable 'user_id' or wallet_address is required for swap operations.",
-            )
-
+def _resolve_identity(
+    request: ChatRequest,
+    principal: PanoramaPrincipal,
+) -> tuple[str, str]:
+    """Resolve authenticated ownership and the requested conversation ID."""
+    user_id = principal.user_id
     conversation_id = (request.conversation_id or "").strip() or "default"
     return user_id, conversation_id
 
@@ -391,28 +385,19 @@ def get_available_models():
     }
 
 
-@app.get("/chat/messages")
-def get_messages(request: Request):
-    params = request.query_params
-    conversation_id = params.get("conversation_id", "default")
-    user_id = params.get("user_id", "anonymous")
-    return {"messages": chat_manager_instance.get_messages(conversation_id, user_id)}
-
-
-@app.get("/chat/conversations")
-def get_conversations(request: Request):
-    params = request.query_params
-    user_id = params.get("user_id", "anonymous")
-    return {"conversation_ids": chat_manager_instance.get_all_conversation_ids(user_id)}
-
-
 @app.post("/chat")
-def chat(request: ChatRequest):
+def chat(
+    request: ChatRequest,
+    principal: PanoramaPrincipal = Depends(require_chat_principal),
+):
     user_id: str | None = None
     conversation_id: str | None = None
     try:
         logger.debug("Received chat payload: %s", request.model_dump())
-        user_id, conversation_id = _resolve_identity(request)
+        user_id, conversation_id = _resolve_identity(
+            request,
+            principal,
+        )
         logger.debug(
             "Resolved chat identity user=%s conversation=%s wallet=%s",
             user_id,
@@ -547,53 +532,76 @@ async def _persist_response_bg(
     conversation_id: str,
     cost_delta: dict,
 ) -> None:
-    """Background task: persist assistant message and update costs."""
-    try:
-        agent_name = _map_agent_type(response_agent)
-        response_message = ChatMessage(
-            role="assistant",
-            content=full_response,
-            agent_name=agent_name,
-            agent_type=_map_agent_type(agent_name),
-            metadata=response_metadata,
-            conversation_id=conversation_id,
-            user_id=user_id,
-            requires_action=(
-                True if agent_name in ("token swap", "lending", "staking", "yield", "yield strategy") else False
-            ),
-            action_type=(
-                "swap"
-                if agent_name == "token swap"
-                else "lending"
-                if agent_name == "lending"
-                else "staking"
-                if agent_name == "staking"
-                else "liquidity"
-                if agent_name == "yield"
-                else "strategy"
-                if agent_name == "yield strategy"
-                else None
-            ),
-        )
-        await asyncio.to_thread(
-            chat_manager_instance.add_message,
-            response_message.dict(),
-            conversation_id,
-            user_id,
-        )
+    """Durably persist the streamed assistant response before acknowledgement."""
+    agent_name = _map_agent_type(response_agent)
+    response_message = ChatMessage(
+        role="assistant",
+        content=full_response,
+        agent_name=agent_name,
+        agent_type=_map_agent_type(agent_name),
+        metadata=response_metadata,
+        conversation_id=conversation_id,
+        user_id=user_id,
+        requires_action=(
+            True if agent_name in ("token swap", "lending", "staking", "yield", "yield strategy") else False
+        ),
+        action_type=(
+            "swap"
+            if agent_name == "token swap"
+            else "lending"
+            if agent_name == "lending"
+            else "staking"
+            if agent_name == "staking"
+            else "liquidity"
+            if agent_name == "yield"
+            else "strategy"
+            if agent_name == "yield strategy"
+            else None
+        ),
+    )
 
-        if cost_delta.get("cost", 0) > 0 or cost_delta.get("calls", 0) > 0:
+    # Assistant-message durability is part of successful chat completion.
+    # Let this failure propagate to the stream so it cannot emit a false
+    # successful completion acknowledgement.
+    await asyncio.to_thread(
+        chat_manager_instance.add_message,
+        response_message.dict(),
+        conversation_id,
+        user_id,
+    )
+
+    # Cost accounting is secondary to durable chat history.
+    if cost_delta.get("cost", 0) > 0 or cost_delta.get("calls", 0) > 0:
+        try:
             await asyncio.to_thread(
                 chat_manager_instance.update_conversation_costs,
                 cost_delta,
                 conversation_id,
                 user_id,
             )
+        except Exception:
+            logger.exception(
+                "Failed to update costs for streamed response "
+                "user=%s conversation=%s",
+                user_id,
+                conversation_id,
+            )
 
-        # Clear DeFi metadata when intent is ready
-        _clear_ready_metadata(agent_name, response_metadata, user_id, conversation_id)
+    # Metadata cleanup is also secondary once the response is durable.
+    try:
+        _clear_ready_metadata(
+            agent_name,
+            response_metadata,
+            user_id,
+            conversation_id,
+        )
     except Exception:
-        logger.exception("Failed to persist streamed response")
+        logger.exception(
+            "Failed to clear metadata after streamed response "
+            "user=%s conversation=%s",
+            user_id,
+            conversation_id,
+        )
 
 
 def _build_event_generator(
@@ -720,6 +728,33 @@ def _build_event_generator(
                 if strategy_meta:
                     response_metadata = strategy_meta
 
+        try:
+            await _persist_response_bg(
+                full_response,
+                response_agent,
+                response_metadata,
+                user_id,
+                conversation_id,
+                cost_delta,
+            )
+        except Exception:
+            logger.exception(
+                "Failed to persist streamed response "
+                "user=%s conversation=%s",
+                user_id,
+                conversation_id,
+            )
+            yield _sse(
+                "error",
+                {
+                    "message": (
+                        "The assistant response could not be durably "
+                        "saved. Please retry."
+                    )
+                },
+            )
+            return
+
         yield _sse("done", {
             "agent": agent_name,
             "nodes": nodes_executed,
@@ -728,13 +763,6 @@ def _build_event_generator(
             "response_mode": response_mode,
             "costs": {"total_usd": cost_delta.get("cost", 0)},
         })
-
-        asyncio.create_task(
-            _persist_response_bg(
-                full_response, response_agent, response_metadata,
-                user_id, conversation_id, cost_delta,
-            )
-        )
 
     return event_generator
 
@@ -759,7 +787,10 @@ def _streaming_response(
 
 
 @app.post("/chat/stream")
-async def chat_stream(request: ChatRequest):
+async def chat_stream(
+    request: ChatRequest,
+    principal: PanoramaPrincipal = Depends(require_chat_principal),
+):
     """SSE streaming endpoint — streams thought process + tokens in real-time.
 
     Event types:
@@ -772,7 +803,10 @@ async def chat_stream(request: ChatRequest):
     uid: str | None = None
     cid: str | None = None
     try:
-        uid, cid = _resolve_identity(request)
+        uid, cid = _resolve_identity(
+            request,
+            principal,
+        )
     except HTTPException as exc:
         # Return error as a streaming event so the client can parse it
         async def _err():
@@ -867,6 +901,7 @@ async def chat_stream_with_files(
     wallet_address: str = Form("default"),
     response_mode: Literal["fast", "reasoning"] = Form("fast"),
     files: List[UploadFile] = File(default=[]),
+    principal: PanoramaPrincipal = Depends(require_chat_principal),
 ):
     """SSE streaming with file attachments (images & documents).
 
@@ -880,17 +915,8 @@ async def chat_stream_with_files(
         MAX_IMAGE_SIZE, MAX_DOCUMENT_SIZE,
     )
 
-    # --- Resolve identity (same logic as _resolve_identity but from Form fields) ---
-    uid = (user_id or "").strip()
-    if not uid or uid.lower() == "anonymous":
-        w = (wallet_address or "").strip()
-        if w and w.lower() != "default":
-            uid = f"wallet::{w.lower()}"
-        else:
-            async def _err():
-                yield _sse("error", {"message": "A stable 'user_id' or wallet_address is required."})
-            return StreamingResponse(_err(), media_type="text/event-stream")
-
+    # Ownership comes exclusively from the authenticated Panorama principal.
+    uid = principal.user_id
     cid = (conversation_id or "").strip() or "default"
     wallet = wallet_address.strip() if wallet_address else None
     if wallet and wallet.lower() == "default":
@@ -1104,6 +1130,7 @@ async def chat_audio(
     user_id: str = Form(..., description="User ID"),
     conversation_id: str = Form(..., description="Conversation ID"),
     wallet_address: str = Form("default", description="Wallet address"),
+    principal: PanoramaPrincipal = Depends(require_chat_principal),
 ):
     """Process audio input through the agent pipeline.
 
@@ -1114,21 +1141,12 @@ async def chat_audio(
     4. Pre-classified intent is injected into graph state so semantic_router
        can skip the embedding call (~200 ms saved)
     """
-    request_user_id: str | None = user_id
-    request_conversation_id: str | None = conversation_id
+    request_user_id: str = principal.user_id
+    request_conversation_id: str = (
+        (conversation_id or "").strip() or "default"
+    )
 
     try:
-        # Validate user_id
-        if not user_id or user_id.lower() == "anonymous":
-            wallet = (wallet_address or "").strip()
-            if wallet and wallet.lower() != "default":
-                request_user_id = f"wallet::{wallet.lower()}"
-            else:
-                raise HTTPException(
-                    status_code=400,
-                    detail="A stable 'user_id' or wallet_address is required.",
-                )
-
         logger.debug(
             "Received audio chat request user=%s conversation=%s filename=%s",
             request_user_id,

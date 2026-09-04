@@ -198,7 +198,7 @@ class PanoramaStore:
         data = result.get("data", []) if isinstance(result, dict) else []
         return [
             {
-                "id": item.get("id") or _conversation_key(user_id, item.get("conversationId", "")),
+                "id": item.get("conversationId"),
                 "title": item.get("title"),
                 "updated_at": item.get("updatedAt"),
                 "message_count": item.get("messageCount"),
@@ -219,8 +219,28 @@ class PanoramaStore:
         return [item.get("userId") for item in data if item.get("userId")]
 
     def delete_conversation(self, user_id: str, conversation_id: str) -> None:
+        conv_identifier = _conversation_identifier(user_id, conversation_id)
+
+        try:
+            conversation = self._client.get(
+                "conversations",
+                conv_identifier,
+            )
+        except PanoramaGatewayError as exc:
+            if exc.status_code != 404:
+                raise
+            conversation = None
+
+        if not conversation:
+            self._logger.info(
+                "conversation.delete_idempotent_missing user_id=%s conversation_id=%s",
+                user_id,
+                conversation_id,
+            )
+            return
+
         messages = self.list_messages(user_id, conversation_id)
-        deletes: List[Dict[str, Any]] = [
+        operations: List[Dict[str, Any]] = [
             {
                 "op": "delete",
                 "entity": "messages",
@@ -229,20 +249,22 @@ class PanoramaStore:
             for message in messages
             if message.get("messageId")
         ]
-        if deletes:
-            self._client.transact(deletes)
 
-        conv_identifier = _conversation_identifier(user_id, conversation_id)
-        try:
-            self._logger.info(
-                "conversation.delete user_id=%s conversation_id=%s identifier_type=structured",
-                user_id,
-                conversation_id,
-            )
-            self._client.delete("conversations", conv_identifier)
-        except PanoramaGatewayError as exc:
-            if exc.status_code != 404:
-                raise
+        operations.append(
+            {
+                "op": "delete",
+                "entity": "conversations",
+                "args": {"id": conv_identifier},
+            }
+        )
+
+        self._logger.info(
+            "conversation.delete_atomic user_id=%s conversation_id=%s message_count=%s",
+            user_id,
+            conversation_id,
+            len(operations) - 1,
+        )
+        self._client.transact(operations)
 
     def update_conversation_title(self, user_id: str, conversation_id: str, title: str) -> None:
         """Update the title of an existing conversation."""

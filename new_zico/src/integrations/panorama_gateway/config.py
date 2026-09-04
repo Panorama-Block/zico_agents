@@ -31,10 +31,10 @@ class PanoramaGatewaySettings:
         if not base_url:
             raise ValueError("PANORAMA_GATEWAY_URL environment variable is required.")
 
-        secret = os.getenv("PANORAMA_GATEWAY_JWT_SECRET") or os.getenv("JWT_SECRET")
+        secret = os.getenv("PANORAMA_GATEWAY_JWT_SECRET")
         if not secret:
             raise ValueError(
-                "Set PANORAMA_GATEWAY_JWT_SECRET or reuse JWT_SECRET for Panorama gateway auth."
+                "PANORAMA_GATEWAY_JWT_SECRET environment variable is required."
             )
 
         return cls(

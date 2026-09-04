@@ -35,7 +35,6 @@ class ChatManager:
     ) -> List[Dict[str, str]]:
         conversation_id, user_id = self._resolve_ids(conversation_id, user_id)
         try:
-            self._store.ensure_conversation(user_id, conversation_id)
             messages = self._store.list_messages(user_id, conversation_id)
             return messages
         except Exception as exc:
@@ -159,20 +158,12 @@ class ChatManager:
         user_id: Optional[str] = None,
     ) -> None:
         conversation_id, user_id = self._resolve_ids(conversation_id, user_id)
-        try:
-            self._store.delete_conversation(user_id, conversation_id)
-            logger.info(
-                "Deleted conversation for user=%s conversation=%s",
-                user_id,
-                conversation_id,
-            )
-        except Exception as exc:
-            logger.warning(
-                "Failed to delete conversation for user=%s conversation=%s: %s",
-                user_id,
-                conversation_id,
-                exc,
-            )
+        self._store.delete_conversation(user_id, conversation_id)
+        logger.info(
+            "Deleted conversation for user=%s conversation=%s",
+            user_id,
+            conversation_id,
+        )
 
     def update_conversation_title(
         self,
@@ -192,7 +183,7 @@ class ChatManager:
 
     def create_conversation(self, user_id: Optional[str] = None) -> str:
         user_id = (user_id or "anonymous")
-        conversation_id = f"conversation-{uuid.uuid4().hex[:8]}"
+        conversation_id = f"conversation-{uuid.uuid4().hex}"
         try:
             self._store.ensure_user_and_conversation(user_id, conversation_id)
             logger.info(

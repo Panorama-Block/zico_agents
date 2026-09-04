@@ -18,6 +18,7 @@ from src.graphs.factory import build_graph
 from src.graphs.nodes import initialize_agents
 from src.models.chatMessage import ChatMessage
 from src.routes.chat_manager_routes import router as chat_manager_router
+from src.diagnostics.routes import router as diagnostics_router
 from src.service.chat_manager import StoragePersistenceError, chat_manager_instance
 from src.agents.crypto_data.tools import get_coingecko_id, get_tradingview_symbol
 from src.agents.metadata import metadata
@@ -1380,3 +1381,4 @@ async def transcribe_audio(
 
 # Include chat manager router
 app.include_router(chat_manager_router)
+app.include_router(diagnostics_router)

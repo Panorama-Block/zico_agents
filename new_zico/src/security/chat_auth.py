@@ -3,6 +3,7 @@ from __future__ import annotations
 import os
 from dataclasses import dataclass
 from typing import Any, Mapping
+from urllib.parse import urlsplit
 
 import httpx
 from fastapi import Header, HTTPException
@@ -32,6 +33,31 @@ def _normalise_address(value: Any) -> str:
         raise ChatAuthError("Authenticated principal address is missing.")
 
     return address.lower()
+
+
+def _resolve_auth_service_url() -> str:
+    """Resolve Panorama auth without requiring deployment-specific changes."""
+
+    explicit = (os.getenv("AUTH_SERVICE_URL") or "").strip()
+    if explicit:
+        return explicit.rstrip("/")
+
+    gateway_url = (os.getenv("PANORAMA_GATEWAY_URL") or "").strip()
+    if not gateway_url:
+        raise HTTPException(
+            status_code=503,
+            detail="Authentication service is not configured.",
+        )
+
+    parsed = urlsplit(gateway_url)
+
+    if parsed.scheme not in {"http", "https"} or not parsed.netloc:
+        raise HTTPException(
+            status_code=503,
+            detail="Authentication service is not configured.",
+        )
+
+    return f"{parsed.scheme}://{parsed.netloc}"
 
 
 def validate_bearer_token(
@@ -112,12 +138,7 @@ def require_chat_principal(
             headers={"WWW-Authenticate": "Bearer"},
         )
 
-    auth_service_url = (os.getenv("AUTH_SERVICE_URL") or "").strip()
-    if not auth_service_url:
-        raise HTTPException(
-            status_code=503,
-            detail="Authentication service is not configured.",
-        )
+    auth_service_url = _resolve_auth_service_url()
 
     try:
         return validate_bearer_token(

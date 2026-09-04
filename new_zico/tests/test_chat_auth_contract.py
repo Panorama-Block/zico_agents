@@ -142,6 +142,71 @@ class ChatAuthHttpContractTest(unittest.TestCase):
             )
         return require_chat_principal
 
+    def test_explicit_auth_service_url_is_authoritative(self):
+        from src.security import chat_auth
+        from unittest.mock import patch
+
+        with patch.dict(
+            "os.environ",
+            {
+                "AUTH_SERVICE_URL": "https://auth.example.com/",
+                "PANORAMA_GATEWAY_URL": "https://api.panoramablock.com/database",
+            },
+            clear=True,
+        ):
+            self.assertEqual(
+                chat_auth._resolve_auth_service_url(),
+                "https://auth.example.com",
+            )
+
+    def test_auth_origin_is_derived_from_gateway_url(self):
+        from src.security import chat_auth
+        from unittest.mock import patch
+
+        with patch.dict(
+            "os.environ",
+            {
+                "PANORAMA_GATEWAY_URL": "https://api.panoramablock.com/database",
+            },
+            clear=True,
+        ):
+            self.assertEqual(
+                chat_auth._resolve_auth_service_url(),
+                "https://api.panoramablock.com",
+            )
+
+    def test_missing_auth_configuration_returns_503(self):
+        from src.security import chat_auth
+        from unittest.mock import patch
+
+        with patch.dict("os.environ", {}, clear=True):
+            with self.assertRaises(HTTPException) as ctx:
+                chat_auth._resolve_auth_service_url()
+
+        self.assertEqual(ctx.exception.status_code, 503)
+        self.assertEqual(
+            ctx.exception.detail,
+            "Authentication service is not configured.",
+        )
+
+    def test_malformed_gateway_url_returns_503(self):
+        from src.security import chat_auth
+        from unittest.mock import patch
+
+        with patch.dict(
+            "os.environ",
+            {"PANORAMA_GATEWAY_URL": "not-a-valid-http-url"},
+            clear=True,
+        ):
+            with self.assertRaises(HTTPException) as ctx:
+                chat_auth._resolve_auth_service_url()
+
+        self.assertEqual(ctx.exception.status_code, 503)
+        self.assertEqual(
+            ctx.exception.detail,
+            "Authentication service is not configured.",
+        )
+
     def test_missing_authorization_header_returns_401(self):
         require_chat_principal = self._load_dependency()
 

@@ -7,6 +7,7 @@ well-formatted or very short.
 
 from __future__ import annotations
 
+import hashlib
 import logging
 import re
 
@@ -83,11 +84,25 @@ def formatter_node(state: AgentState) -> dict:
     nodes = list(state.get("nodes_executed", []))
     nodes.append("formatter_node")
 
+    def _digest(value: str) -> str:
+        return hashlib.sha256(value.encode("utf-8")).hexdigest()[:16]
+
+    logger.info(
+        "response.boundary.formatter_input length=%d sha256_16=%s",
+        len(response_text),
+        _digest(response_text),
+    )
+
     # Always sanitize handoff phrases
     response_text = sanitize_handoff_phrases(response_text)
 
     # Smart passthrough — skip LLM if already formatted or very short
     if not response_text or _already_formatted(response_text):
+        logger.info(
+            "response.boundary.formatter_output passthrough=true length=%d sha256_16=%s",
+            len(response_text),
+            _digest(response_text),
+        )
         return {
             "final_response": response_text,
             "nodes_executed": nodes,
@@ -116,6 +131,12 @@ def formatter_node(state: AgentState) -> dict:
     except Exception:
         logger.exception("Formatter LLM call failed; using original response.")
         formatted = response_text
+
+    logger.info(
+        "response.boundary.formatter_output passthrough=false length=%d sha256_16=%s",
+        len(formatted),
+        _digest(formatted),
+    )
 
     return {
         "final_response": formatted,

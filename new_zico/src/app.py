@@ -617,6 +617,7 @@ def _build_event_generator(
         cost_snapshot = cost_tracker.get_snapshot()
 
         final_response_chunks: List[str] = []
+        authoritative_graph_response = ""
         response_agent = "supervisor"
         response_metadata: Dict[str, Any] = {}
         nodes_executed: List[str] = []
@@ -692,17 +693,20 @@ def _build_event_generator(
                     if isinstance(output, dict):
                         response_agent = output.get("response_agent", response_agent)
                         response_metadata = output.get("response_metadata", response_metadata)
-                        if not final_response_chunks:
-                            graph_response = output.get("final_response", "")
-                            if graph_response:
-                                final_response_chunks.append(graph_response)
+                        graph_response = output.get("final_response", "")
+                        if isinstance(graph_response, str) and graph_response:
+                            authoritative_graph_response = graph_response
 
         except Exception as exc:
             logger.exception("Stream error for user=%s conversation=%s", user_id, conversation_id)
             yield _sse("error", {"message": str(exc)})
             return
 
-        full_response = "".join(final_response_chunks)
+        # Token callbacks are presentation-only. They are not guaranteed to
+        # represent a complete user-facing response across nested LangGraph /
+        # agent model calls. The completed graph state is authoritative for
+        # durability and the final completion acknowledgement.
+        full_response = authoritative_graph_response or "".join(final_response_chunks)
         cost_delta = cost_tracker.calculate_delta(cost_snapshot)
         agent_name = _map_agent_type(response_agent)
 

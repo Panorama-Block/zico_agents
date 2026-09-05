@@ -564,7 +564,11 @@ def _invoke_defi_agent(
             "nodes_executed": nodes,
         }
 
-    agent_name, text, messages_out = extract_response_from_graph(response)
+    agent_name, text, messages_out = extract_response_from_graph(
+        response,
+        diagnostic_user_id=user_id,
+        diagnostic_conversation_id=conversation_id,
+    )
     resolved_agent_name = agent_name if agent_name and agent_name != "supervisor" else agent_key
     meta = build_metadata(resolved_agent_name, user_id, conversation_id, messages_out)
 
@@ -633,7 +637,11 @@ def swap_agent_node(state: AgentState, config: RunnableConfig | None = None) -> 
             "nodes_executed": nodes,
         }
 
-    agent_name, text, messages_out = extract_response_from_graph(response)
+    agent_name, text, messages_out = extract_response_from_graph(
+        response,
+        diagnostic_user_id=user_id,
+        diagnostic_conversation_id=conversation_id,
+    )
     resolved_agent_name = agent_name if agent_name and agent_name != "supervisor" else "swap_agent"
     meta = build_metadata(resolved_agent_name, user_id, conversation_id, messages_out)
 
@@ -739,7 +747,11 @@ def _invoke_simple_agent(agent_key: str, state: AgentState, config: RunnableConf
             "nodes_executed": nodes,
         }
 
-    agent_name, text, messages_out = extract_response_from_graph(response)
+    agent_name, text, messages_out = extract_response_from_graph(
+        response,
+        diagnostic_user_id=user_id,
+        diagnostic_conversation_id=conversation_id,
+    )
     logger.info(
         "response.boundary.agent_extracted agent_key=%s resolved_candidate=%s length=%d",
         agent_key,
@@ -829,7 +841,11 @@ def portfolio_advisor_node(state: AgentState, config: RunnableConfig | None = No
             "nodes_executed": nodes,
         }
 
-    agent_name, text, messages_out = extract_response_from_graph(response)
+    agent_name, text, messages_out = extract_response_from_graph(
+        response,
+        diagnostic_user_id=user_id,
+        diagnostic_conversation_id=conversation_id,
+    )
     logger.info(
         "response.boundary.agent_extracted agent_key=portfolio_advisor "
         "resolved_candidate=%s length=%d",

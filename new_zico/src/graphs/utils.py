@@ -16,6 +16,7 @@ from src.agents.metadata import metadata
 from src.agents.crypto_data.config import Config as CryptoConfig
 from src.agents.swap.config import SwapConfig
 from src.agents.lending.config import LendingConfig
+from src.diagnostics.response_boundary import update_trace
 
 logger = logging.getLogger(__name__)
 
@@ -167,7 +168,12 @@ KNOWN_AGENT_NAMES = {
 }
 
 
-def extract_response_from_graph(response: Any) -> Tuple[str, str, list]:
+def extract_response_from_graph(
+    response: Any,
+    *,
+    diagnostic_user_id: str | None = None,
+    diagnostic_conversation_id: str | None = None,
+) -> Tuple[str, str, list]:
     """
     Parse agent output and return (agent_name, cleaned_text, messages_out).
     """
@@ -194,6 +200,15 @@ def extract_response_from_graph(response: Any) -> Tuple[str, str, list]:
         "response.boundary.agent_messages count=%d inventory=%s",
         len(messages_out),
         inventory,
+    )
+    update_trace(
+        diagnostic_user_id,
+        diagnostic_conversation_id,
+        section="agent_messages",
+        value={
+            "count": len(messages_out),
+            "inventory": inventory,
+        },
     )
 
     def _choose(m, index):
@@ -246,6 +261,17 @@ def extract_response_from_graph(response: Any) -> Tuple[str, str, list]:
         final_agent,
         len(cleaned_response),
         _digest(cleaned_response),
+    )
+    update_trace(
+        diagnostic_user_id,
+        diagnostic_conversation_id,
+        section="extracted",
+        value={
+            "selected_index": selected_index,
+            "agent": final_agent,
+            "length": len(cleaned_response),
+            "sha256_16": _digest(cleaned_response),
+        },
     )
 
     return final_agent, cleaned_response, messages_out

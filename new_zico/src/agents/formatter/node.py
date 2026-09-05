@@ -17,6 +17,7 @@ from src.agents.config import Config
 from src.agents.formatter.prompt import FORMATTER_SYSTEM_PROMPT
 from src.graphs.state import AgentState
 from src.graphs.utils import sanitize_handoff_phrases
+from src.diagnostics.response_boundary import update_trace
 
 logger = logging.getLogger(__name__)
 
@@ -81,6 +82,8 @@ def _is_safe_formatted_output(original: str, formatted: str) -> bool:
 def formatter_node(state: AgentState) -> dict:
     """Format the agent response as clean markdown."""
     response_text = state.get("final_response", "")
+    user_id = state.get("user_id")
+    conversation_id = state.get("conversation_id")
     nodes = list(state.get("nodes_executed", []))
     nodes.append("formatter_node")
 
@@ -92,6 +95,12 @@ def formatter_node(state: AgentState) -> dict:
         len(response_text),
         _digest(response_text),
     )
+    formatter_trace = {
+        "input": {
+            "length": len(response_text),
+            "sha256_16": _digest(response_text),
+        },
+    }
 
     # Always sanitize handoff phrases
     response_text = sanitize_handoff_phrases(response_text)
@@ -102,6 +111,17 @@ def formatter_node(state: AgentState) -> dict:
             "response.boundary.formatter_output passthrough=true length=%d sha256_16=%s",
             len(response_text),
             _digest(response_text),
+        )
+        formatter_trace["output"] = {
+            "passthrough": True,
+            "length": len(response_text),
+            "sha256_16": _digest(response_text),
+        }
+        update_trace(
+            user_id,
+            conversation_id,
+            section="formatter",
+            value=formatter_trace,
         )
         return {
             "final_response": response_text,
@@ -136,6 +156,17 @@ def formatter_node(state: AgentState) -> dict:
         "response.boundary.formatter_output passthrough=false length=%d sha256_16=%s",
         len(formatted),
         _digest(formatted),
+    )
+    formatter_trace["output"] = {
+        "passthrough": False,
+        "length": len(formatted),
+        "sha256_16": _digest(formatted),
+    }
+    update_trace(
+        user_id,
+        conversation_id,
+        section="formatter",
+        value=formatter_trace,
     )
 
     return {

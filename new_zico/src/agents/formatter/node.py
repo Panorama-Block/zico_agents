@@ -47,6 +47,36 @@ def _already_formatted(text: str) -> bool:
     return len(structural_matches) >= 3
 
 
+def _is_safe_formatted_output(original: str, formatted: str) -> bool:
+    """Return True when formatter output safely preserves substantive content.
+
+    Formatting is presentation-only. A formatter result must never replace a
+    meaningful response with empty, malformed, or catastrophically truncated
+    output.
+    """
+    original_clean = original.strip()
+    formatted_clean = formatted.strip()
+
+    if not formatted_clean:
+        return False
+
+    # A markdown marker without header text is never a valid final response.
+    if formatted_clean in {"#", "##", "###"}:
+        return False
+
+    # The formatter is instructed to preserve all information. Large content
+    # loss therefore indicates a failed or truncated formatter completion.
+    if len(original_clean) > _SHORT_RESPONSE_THRESHOLD:
+        minimum_safe_length = max(
+            _SHORT_RESPONSE_THRESHOLD,
+            len(original_clean) // 2,
+        )
+        if len(formatted_clean) < minimum_safe_length:
+            return False
+
+    return True
+
+
 def formatter_node(state: AgentState) -> dict:
     """Format the agent response as clean markdown."""
     response_text = state.get("final_response", "")
@@ -74,6 +104,15 @@ def formatter_node(state: AgentState) -> dict:
         formatted = result.content if isinstance(result.content, str) else response_text
         # Final sanitization
         formatted = sanitize_handoff_phrases(formatted)
+
+        if not _is_safe_formatted_output(response_text, formatted):
+            logger.warning(
+                "Formatter output failed integrity validation; using original response. "
+                "original_length=%d formatted_length=%d",
+                len(response_text),
+                len(formatted),
+            )
+            formatted = response_text
     except Exception:
         logger.exception("Formatter LLM call failed; using original response.")
         formatted = response_text

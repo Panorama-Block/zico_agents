@@ -24,6 +24,7 @@ from src.service.chat_manager import StoragePersistenceError, chat_manager_insta
 from src.security.chat_auth import PanoramaPrincipal, require_chat_principal
 from src.agents.crypto_data.tools import get_coingecko_id, get_tradingview_symbol
 from src.agents.metadata import metadata
+from src.diagnostics.response_boundary import start_trace, update_trace
 
 # Setup structured logging
 log_level = os.getenv("LOG_LEVEL", "INFO")
@@ -614,6 +615,7 @@ def _build_event_generator(
     """Factory that returns an async generator yielding SSE events from the graph."""
 
     async def event_generator():
+        start_trace(user_id, conversation_id)
         cost_tracker = Config.get_cost_tracker()
         cost_snapshot = cost_tracker.get_snapshot()
 
@@ -722,6 +724,19 @@ def _build_event_generator(
             _digest(authoritative_graph_response),
             len(full_response),
             _digest(full_response),
+        )
+        update_trace(
+            user_id,
+            conversation_id,
+            section="stream",
+            value={
+                "streamed_length": len(streamed_response),
+                "streamed_sha256_16": _digest(streamed_response),
+                "graph_length": len(authoritative_graph_response),
+                "graph_sha256_16": _digest(authoritative_graph_response),
+                "selected_length": len(full_response),
+                "selected_sha256_16": _digest(full_response),
+            },
         )
 
         cost_delta = cost_tracker.calculate_delta(cost_snapshot)

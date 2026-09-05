@@ -7,6 +7,7 @@ from src.diagnostics.auth import (
     require_runtime_evidence_principal,
 )
 from src.diagnostics.runtime_evidence import build_runtime_evidence
+from src.diagnostics.response_boundary import get_latest_trace_for_user
 
 
 router = APIRouter(tags=["diagnostics"])
@@ -29,4 +30,8 @@ def runtime_evidence(
     PANORAMA_GATEWAY_URL, avoiding a hosting-environment dependency.
     """
 
-    return build_runtime_evidence()
+    evidence = build_runtime_evidence()
+    evidence["response_boundary"] = get_latest_trace_for_user(
+        _principal.user_id
+    )
+    return evidence

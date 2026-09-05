@@ -1,5 +1,6 @@
 import json
 
+from src.diagnostics.auth import RuntimeEvidencePrincipal
 from src.diagnostics.routes import runtime_evidence
 
 
@@ -11,7 +12,9 @@ def test_runtime_evidence_endpoint_returns_evidence_without_runtime_flag(monkeyp
         "dedicated-http-secret-material",
     )
 
-    payload = runtime_evidence()
+    payload = runtime_evidence(
+        RuntimeEvidencePrincipal(user_id="0xtest")
+    )
 
     assert payload["application"]["name"] == "Zico Agent API"
     assert payload["panorama_gateway"]["url"] == "https://gateway.example"
@@ -38,7 +41,9 @@ def test_serialized_http_payload_contains_no_secret_values(monkeypatch):
     for name, value in secrets.items():
         monkeypatch.setenv(name, value)
 
-    payload = runtime_evidence()
+    payload = runtime_evidence(
+        RuntimeEvidencePrincipal(user_id="0xtest")
+    )
     serialized = json.dumps(payload, sort_keys=True)
 
     for value in secrets.values():
@@ -55,3 +60,36 @@ def test_runtime_evidence_route_is_hidden_from_openapi():
     )
 
     assert route.include_in_schema is False
+
+
+def test_runtime_evidence_includes_latest_response_boundary_for_principal(monkeypatch):
+    from src.diagnostics.response_boundary import (
+        clear_traces_for_tests,
+        start_trace,
+        update_trace,
+    )
+
+    clear_traces_for_tests()
+    start_trace("0x1234", "conversation-test")
+    update_trace(
+        "0x1234",
+        "conversation-test",
+        section="stream",
+        value={
+            "streamed_length": 900,
+            "streamed_sha256_16": "aaaaaaaaaaaaaaaa",
+            "graph_length": 20,
+            "graph_sha256_16": "bbbbbbbbbbbbbbbb",
+            "selected_length": 20,
+            "selected_sha256_16": "bbbbbbbbbbbbbbbb",
+        },
+    )
+
+    payload = runtime_evidence(
+        RuntimeEvidencePrincipal(user_id="0x1234")
+    )
+
+    trace = payload["response_boundary"]
+    assert trace["conversation_id"] == "conversation-test"
+    assert trace["stream"]["streamed_length"] == 900
+    assert trace["stream"]["graph_length"] == 20

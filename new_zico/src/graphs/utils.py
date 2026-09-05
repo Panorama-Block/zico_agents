@@ -137,7 +137,10 @@ def get_text_content(message: Any) -> Optional[str]:
     if isinstance(content, list):
         collected: List[str] = []
         for part in content:
-            if isinstance(part, dict):
+            if isinstance(part, str):
+                if part.strip():
+                    collected.append(part.strip())
+            elif isinstance(part, dict):
                 text = part.get("text") or part.get("content")
                 if isinstance(text, str) and text.strip():
                     collected.append(text.strip())

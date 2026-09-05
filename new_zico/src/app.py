@@ -692,7 +692,6 @@ def _build_event_generator(
                                             "name": name,
                                             "parent_depth": len(event.get("parent_ids", []) or []),
                                             "chunks": [],
-                                            "end_text": None,
                                             "end_length": None,
                                             "end_sha256_16": None,
                                             "tool_call_count": None,
@@ -716,7 +715,6 @@ def _build_event_generator(
                         output = event.get("data", {}).get("output")
                         end_text = get_text_content(output) or ""
                         tool_calls = getattr(output, "tool_calls", None)
-                        model_runs[run_id]["end_text"] = end_text
                         model_runs[run_id]["end_length"] = len(end_text)
                         model_runs[run_id]["end_sha256_16"] = (
                             hashlib.sha256(end_text.encode("utf-8")).hexdigest()[:16]
@@ -741,54 +739,12 @@ def _build_event_generator(
             yield _sse("error", {"message": str(exc)})
             return
 
-        # The completed graph state remains authoritative by default.
-        #
-        # A narrow recovery exists for a provider/wrapper failure observed in
-        # production where one non-tool model invocation emits a complete
-        # streamed answer but its on_chat_model_end AIMessage contains only a
-        # truncated prefix of that same stream. Recovery is permitted only when
-        # the single-run stream, model-end response, and graph response prove
-        # that exact corruption signature.
+        # Token callbacks are presentation-only. They are not guaranteed to
+        # represent a complete user-facing response across nested LangGraph /
+        # agent model calls. The completed graph state is authoritative for
+        # durability and the final completion acknowledgement.
         streamed_response = "".join(final_response_chunks)
-        recovered_model_response = ""
-
-        if len(model_run_order) == 1:
-            run = model_runs[model_run_order[0]]
-            run_streamed = "".join(run["chunks"])
-            run_end = run.get("end_text") or ""
-            graph_trimmed = authoritative_graph_response.strip()
-            end_trimmed = run_end.strip()
-
-            materially_longer = (
-                len(run_streamed) >= len(run_end) * 2
-                and len(run_streamed) - len(run_end) >= 200
-            )
-            same_truncated_completion = (
-                bool(run_streamed)
-                and bool(end_trimmed)
-                and run_streamed.startswith(run_end.rstrip())
-                and graph_trimmed == end_trimmed
-            )
-
-            if (
-                run.get("tool_call_count") == 0
-                and materially_longer
-                and same_truncated_completion
-            ):
-                recovered_model_response = run_streamed
-                logger.warning(
-                    "response.boundary.recovered_truncated_model_completion "
-                    "streamed_length=%d end_length=%d graph_length=%d",
-                    len(run_streamed),
-                    len(run_end),
-                    len(authoritative_graph_response),
-                )
-
-        full_response = (
-            recovered_model_response
-            or authoritative_graph_response
-            or streamed_response
-        )
+        full_response = authoritative_graph_response or streamed_response
 
         def _digest(value: str) -> str:
             return hashlib.sha256(value.encode("utf-8")).hexdigest()[:16]
@@ -829,7 +785,6 @@ def _build_event_generator(
                 "graph_sha256_16": _digest(authoritative_graph_response),
                 "selected_length": len(full_response),
                 "selected_sha256_16": _digest(full_response),
-                "recovery_applied": bool(recovered_model_response),
                 "model_run_count": len(model_run_evidence),
                 "model_runs": model_run_evidence,
             },

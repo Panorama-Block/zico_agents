@@ -1,4 +1,5 @@
 import asyncio
+import hashlib
 import base64
 import json
 import os
@@ -706,7 +707,23 @@ def _build_event_generator(
         # represent a complete user-facing response across nested LangGraph /
         # agent model calls. The completed graph state is authoritative for
         # durability and the final completion acknowledgement.
-        full_response = authoritative_graph_response or "".join(final_response_chunks)
+        streamed_response = "".join(final_response_chunks)
+        full_response = authoritative_graph_response or streamed_response
+
+        def _digest(value: str) -> str:
+            return hashlib.sha256(value.encode("utf-8")).hexdigest()[:16]
+
+        logger.info(
+            "response.boundary.stream_complete streamed_length=%d streamed_sha256_16=%s "
+            "graph_length=%d graph_sha256_16=%s selected_length=%d selected_sha256_16=%s",
+            len(streamed_response),
+            _digest(streamed_response),
+            len(authoritative_graph_response),
+            _digest(authoritative_graph_response),
+            len(full_response),
+            _digest(full_response),
+        )
+
         cost_delta = cost_tracker.calculate_delta(cost_snapshot)
         agent_name = _map_agent_type(response_agent)
 

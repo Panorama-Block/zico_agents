@@ -6,6 +6,7 @@ All functions are pure (no class state) and operate on plain data.
 
 from __future__ import annotations
 
+import hashlib
 import json
 import logging
 import re
@@ -173,32 +174,57 @@ def extract_response_from_graph(response: Any) -> Tuple[str, str, list]:
     messages_out = response.get("messages", []) if isinstance(response, dict) else []
     final_response = None
     final_agent = "supervisor"
+    selected_index = None
 
-    def _choose(m):
+    def _digest(value: str) -> str:
+        return hashlib.sha256(value.encode("utf-8")).hexdigest()[:16]
+
+    inventory = []
+    for index, message in enumerate(messages_out):
+        content = get_text_content(message) or ""
+        inventory.append({
+            "index": index,
+            "type": type(message).__name__,
+            "name": getattr(message, "name", None),
+            "length": len(content),
+            "sha256_16": _digest(content) if content else None,
+        })
+
+    logger.info(
+        "response.boundary.agent_messages count=%d inventory=%s",
+        len(messages_out),
+        inventory,
+    )
+
+    def _choose(m, index):
         content_text = get_text_content(m)
         if not content_text:
-            return None, None
+            return None, None, None
         sanitized = sanitize_handoff_phrases(content_text)
         if sanitized and sanitized.strip() and not is_handoff_text(sanitized):
-            return sanitized, getattr(m, "name", None)
-        return None, None
+            return sanitized, getattr(m, "name", None), index
+        return None, None, None
 
     # 1) Last message from a known agent
-    for m in reversed(messages_out):
+    for index in range(len(messages_out) - 1, -1, -1):
+        m = messages_out[index]
         agent_name = getattr(m, "name", None)
         if agent_name in KNOWN_AGENT_NAMES:
-            content, agent = _choose(m)
+            content, agent, chosen_index = _choose(m, index)
             if content:
                 final_response = content
                 final_agent = agent or agent_name
+                selected_index = chosen_index
                 break
 
     # 2) Fallback: any last message with content
     if final_response is None:
-        for m in reversed(messages_out):
-            content, agent = _choose(m)
+        for index in range(len(messages_out) - 1, -1, -1):
+            m = messages_out[index]
+            content, agent, chosen_index = _choose(m, index)
             if content:
                 final_response = content
+                selected_index = chosen_index
                 if agent:
                     final_agent = agent
                 break
@@ -213,6 +239,15 @@ def extract_response_from_graph(response: Any) -> Tuple[str, str, list]:
 
     cleaned_response = final_response or "Sorry, no meaningful response was returned."
     final_agent = final_agent or "supervisor"
+
+    logger.info(
+        "response.boundary.extracted selected_index=%s agent=%s length=%d sha256_16=%s",
+        selected_index,
+        final_agent,
+        len(cleaned_response),
+        _digest(cleaned_response),
+    )
+
     return final_agent, cleaned_response, messages_out
 
 

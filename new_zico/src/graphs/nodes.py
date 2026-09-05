@@ -740,6 +740,12 @@ def _invoke_simple_agent(agent_key: str, state: AgentState, config: RunnableConf
         }
 
     agent_name, text, messages_out = extract_response_from_graph(response)
+    logger.info(
+        "response.boundary.agent_extracted agent_key=%s resolved_candidate=%s length=%d",
+        agent_key,
+        agent_name,
+        len(text),
+    )
     resolved_agent_name = agent_name if agent_name and agent_name != "supervisor" else agent_key
     meta = build_metadata(resolved_agent_name, user_id, conversation_id, messages_out)
 
@@ -824,6 +830,12 @@ def portfolio_advisor_node(state: AgentState, config: RunnableConfig | None = No
         }
 
     agent_name, text, messages_out = extract_response_from_graph(response)
+    logger.info(
+        "response.boundary.agent_extracted agent_key=portfolio_advisor "
+        "resolved_candidate=%s length=%d",
+        agent_name,
+        len(text),
+    )
     resolved_agent_name = agent_name if agent_name and agent_name != "supervisor" else "portfolio_advisor"
     meta = build_metadata(resolved_agent_name, user_id, conversation_id, messages_out)
 

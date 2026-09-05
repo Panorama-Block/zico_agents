@@ -17,6 +17,7 @@ from src.infrastructure.rate_limiter import setup_rate_limiter, limiter
 from src.agents.config import Config
 from src.graphs.factory import build_graph
 from src.graphs.nodes import initialize_agents
+from src.graphs.utils import get_text_content
 from src.models.chatMessage import ChatMessage
 from src.routes.chat_manager_routes import router as chat_manager_router
 from src.diagnostics.routes import router as diagnostics_router
@@ -621,6 +622,8 @@ def _build_event_generator(
 
         final_response_chunks: List[str] = []
         authoritative_graph_response = ""
+        model_runs: Dict[str, Dict[str, Any]] = {}
+        model_run_order: List[str] = []
         response_agent = "supervisor"
         response_metadata: Dict[str, Any] = {}
         nodes_executed: List[str] = []
@@ -681,6 +684,21 @@ def _build_event_generator(
                                 "formatter" in t for t in parent_tags
                             )
                             if not is_formatter and current_agent_node:
+                                run_id = str(event.get("run_id") or "")
+                                if run_id:
+                                    if run_id not in model_runs:
+                                        model_runs[run_id] = {
+                                            "sequence": len(model_run_order) + 1,
+                                            "name": name,
+                                            "parent_depth": len(event.get("parent_ids", []) or []),
+                                            "chunks": [],
+                                            "end_length": None,
+                                            "end_sha256_16": None,
+                                            "tool_call_count": None,
+                                        }
+                                        model_run_order.append(run_id)
+                                    model_runs[run_id]["chunks"].append(text)
+
                                 if not streaming_tokens:
                                     streaming_tokens = True
                                     yield _sse("status", {
@@ -690,6 +708,22 @@ def _build_event_generator(
                                     })
                                 final_response_chunks.append(text)
                                 yield _sse("token", {"t": text})
+
+                elif kind == "on_chat_model_end":
+                    run_id = str(event.get("run_id") or "")
+                    if run_id and run_id in model_runs:
+                        output = event.get("data", {}).get("output")
+                        end_text = get_text_content(output) or ""
+                        tool_calls = getattr(output, "tool_calls", None)
+                        model_runs[run_id]["end_length"] = len(end_text)
+                        model_runs[run_id]["end_sha256_16"] = (
+                            hashlib.sha256(end_text.encode("utf-8")).hexdigest()[:16]
+                            if end_text
+                            else None
+                        )
+                        model_runs[run_id]["tool_call_count"] = (
+                            len(tool_calls) if isinstance(tool_calls, list) else 0
+                        )
 
                 elif kind == "on_chain_end" and name == "LangGraph":
                     output = event.get("data", {}).get("output", {})
@@ -725,6 +759,21 @@ def _build_event_generator(
             len(full_response),
             _digest(full_response),
         )
+        model_run_evidence = []
+        for run_id in model_run_order:
+            run = model_runs[run_id]
+            run_streamed = "".join(run["chunks"])
+            model_run_evidence.append({
+                "sequence": run["sequence"],
+                "name": run["name"],
+                "parent_depth": run["parent_depth"],
+                "streamed_length": len(run_streamed),
+                "streamed_sha256_16": _digest(run_streamed) if run_streamed else None,
+                "end_length": run["end_length"],
+                "end_sha256_16": run["end_sha256_16"],
+                "tool_call_count": run["tool_call_count"],
+            })
+
         update_trace(
             user_id,
             conversation_id,
@@ -736,6 +785,8 @@ def _build_event_generator(
                 "graph_sha256_16": _digest(authoritative_graph_response),
                 "selected_length": len(full_response),
                 "selected_sha256_16": _digest(full_response),
+                "model_run_count": len(model_run_evidence),
+                "model_runs": model_run_evidence,
             },
         )
 

@@ -204,3 +204,100 @@ async def test_done_response_and_persisted_response_are_identical():
 
     assert done[0]["response"] == persisted_response
     assert persisted_response == AUTHORITATIVE
+
+
+@pytest.mark.asyncio
+async def test_model_runs_are_correlated_independently_in_boundary_evidence():
+    run_one = "model-run-1"
+    run_two = "model-run-2"
+
+    def model_chunk(text, run_id, parent_ids):
+        return {
+            "event": "on_chat_model_stream",
+            "name": "ChatGoogleGenerativeAI",
+            "run_id": run_id,
+            "parent_ids": parent_ids,
+            "tags": [],
+            "data": {
+                "chunk": SimpleNamespace(content=text),
+            },
+        }
+
+    def model_end(text, run_id, parent_ids, tool_calls=None):
+        return {
+            "event": "on_chat_model_end",
+            "name": "ChatGoogleGenerativeAI",
+            "run_id": run_id,
+            "parent_ids": parent_ids,
+            "tags": [],
+            "data": {
+                "output": SimpleNamespace(
+                    content=text,
+                    tool_calls=tool_calls or [],
+                ),
+            },
+        }
+
+    first = "I should inspect available strategy data."
+    second = "## Final Answer\nA complete user-facing answer."
+
+    with patch.object(app_module, "update_trace") as update_trace:
+        parsed, persisted = await _collect(
+            [
+                _chain_start("strategy_agent_node"),
+                model_chunk(first, run_one, ["root", "strategy"]),
+                model_end(
+                    first,
+                    run_one,
+                    ["root", "strategy"],
+                    tool_calls=[{"name": "lookup"}],
+                ),
+                model_chunk(second, run_two, ["root", "strategy"]),
+                model_end(
+                    second,
+                    run_two,
+                    ["root", "strategy"],
+                ),
+                _graph_end(),
+            ]
+        )
+
+    stream_updates = [
+        call.kwargs["value"]
+        for call in update_trace.call_args_list
+        if call.kwargs.get("section") == "stream"
+    ]
+
+    assert len(stream_updates) == 1
+
+    evidence = stream_updates[0]
+
+    assert evidence["model_run_count"] == 2
+    assert len(evidence["model_runs"]) == 2
+
+    first_run = evidence["model_runs"][0]
+    second_run = evidence["model_runs"][1]
+
+    assert first_run["sequence"] == 1
+    assert first_run["name"] == "ChatGoogleGenerativeAI"
+    assert first_run["parent_depth"] == 2
+    assert first_run["streamed_length"] == len(first)
+    assert first_run["end_length"] == len(first)
+    assert first_run["streamed_sha256_16"] == first_run["end_sha256_16"]
+    assert first_run["tool_call_count"] == 1
+
+    assert second_run["sequence"] == 2
+    assert second_run["name"] == "ChatGoogleGenerativeAI"
+    assert second_run["parent_depth"] == 2
+    assert second_run["streamed_length"] == len(second)
+    assert second_run["end_length"] == len(second)
+    assert second_run["streamed_sha256_16"] == second_run["end_sha256_16"]
+    assert second_run["tool_call_count"] == 0
+
+    assert "model-run-1" not in json.dumps(evidence)
+    assert "model-run-2" not in json.dumps(evidence)
+
+    done = [data for event, data in parsed if event == "done"]
+    assert len(done) == 1
+    assert done[0]["response"] == AUTHORITATIVE
+    assert persisted.await_args.args[0] == AUTHORITATIVE

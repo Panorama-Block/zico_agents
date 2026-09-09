@@ -86,9 +86,62 @@ PACKAGE_NAMES = (
 )
 
 
+HUGGINGFACE_SYSTEM_NAMES = {
+    "ACCELERATOR",
+    "COMMIT_SHA",
+    "CPU_CORES",
+    "HF_SPACE_AUTHOR_NAME",
+    "HF_SPACE_HOST",
+    "HF_SPACE_ID",
+    "HF_SPACE_REPO_NAME",
+    "IMAGE_SHA",
+    "MEMORY",
+    "SPACE_AUTHOR_NAME",
+    "SPACE_CREATOR_USER_ID",
+    "SPACE_HOST",
+    "SPACE_ID",
+    "SPACE_REPO_NAME",
+    "SPACE_SUBDOMAIN",
+    "SPACE_TITLE",
+}
+
+
+SECRET_NAME_EXCEPTIONS = {
+    "PANORAMA_GATEWAY_JWT_AUDIENCE",
+    "PANORAMA_GATEWAY_JWT_ISSUER",
+}
+
+
+EXPLICIT_SECRET_NAMES = {
+    "REDIS_URL",
+}
+
+
 def _is_secret_name(name: str) -> bool:
+    if name in SECRET_NAME_EXCEPTIONS:
+        return False
+
+    if name in EXPLICIT_SECRET_NAMES:
+        return True
+
     upper = name.upper()
     return any(marker in upper for marker in SECRET_NAME_MARKERS)
+
+
+def _huggingface_space_id() -> str:
+    return (
+        os.environ.get("SPACE_ID")
+        or os.environ.get("HF_SPACE_ID")
+        or "unknown-space"
+    )
+
+
+def _secret_migration(name: str) -> dict[str, str]:
+    return {
+        "secretRef": f"huggingface:{_huggingface_space_id()}:{name}",
+        "valueSource": "huggingface-space-secret",
+        "recoveryAction": "RECOVER_OR_ROTATE_SECRET",
+    }
 
 
 def _presence(name: str) -> dict[str, Any]:
@@ -113,12 +166,26 @@ def _environment_entry(name: str, value: str) -> dict[str, Any]:
     if _is_secret_name(name):
         return {
             **base,
+            "classification": "secret",
+            "migration": "REQUIRES_SECRET_RECOVERY",
             "redacted": True,
+            "secretMigration": _secret_migration(name),
+        }
+
+    if name in HUGGINGFACE_SYSTEM_NAMES:
+        return {
+            **base,
+            "classification": "huggingface-system",
+            "migration": "REQUIRES_PLATFORM_CONTROL_PLANE",
+            "redacted": False,
+            "value": value,
         }
 
     if name in SAFE_VALUE_NAMES:
         return {
             **base,
+            "classification": "configuration",
+            "migration": "REPLICABLE_FROM_EXPORT",
             "redacted": False,
             "value": value,
         }
@@ -127,6 +194,8 @@ def _environment_entry(name: str, value: str) -> dict[str, Any]:
     # attempting to infer whether an unfamiliar variable contains a secret.
     return {
         **base,
+        "classification": "runtime",
+        "migration": "OBSERVATIONAL_ONLY",
         "redacted": True,
     }
 

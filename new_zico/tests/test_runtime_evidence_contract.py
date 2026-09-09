@@ -212,3 +212,133 @@ def test_runtime_evidence_does_not_expose_command_line_arguments(monkeypatch):
     assert evidence["runtime"]["argv"]["count"] == 4
     assert evidence["runtime"]["argv"]["command"] == "uvicorn"
     assert evidence["runtime"]["argv"]["arguments_redacted"] == 3
+
+
+
+def test_hf_platform_identity_is_control_plane_metadata(monkeypatch):
+    monkeypatch.setenv("SPACE_ID", "ColettoGS/zico-agent")
+    monkeypatch.setenv("SPACE_AUTHOR_NAME", "ColettoGS")
+    monkeypatch.setenv("SPACE_REPO_NAME", "zico-agent")
+
+    from src.diagnostics.runtime_evidence import build_runtime_evidence
+
+    evidence = build_runtime_evidence()
+
+    for name in ("SPACE_ID", "SPACE_AUTHOR_NAME", "SPACE_REPO_NAME"):
+        entry = evidence["environment"][name]
+        assert entry["classification"] == "huggingface-system"
+        assert entry["migration"] == "REQUIRES_PLATFORM_CONTROL_PLANE"
+        assert entry["redacted"] is False
+
+
+def test_application_configuration_is_replicable_from_export(monkeypatch):
+    monkeypatch.setenv("PANORAMA_GATEWAY_URL", "https://gateway.example")
+
+    from src.diagnostics.runtime_evidence import build_runtime_evidence
+
+    evidence = build_runtime_evidence()
+    entry = evidence["environment"]["PANORAMA_GATEWAY_URL"]
+
+    assert entry["classification"] == "configuration"
+    assert entry["migration"] == "REPLICABLE_FROM_EXPORT"
+    assert entry["redacted"] is False
+    assert entry["value"] == "https://gateway.example"
+
+
+def test_application_secret_has_stable_huggingface_migration_reference(monkeypatch):
+    monkeypatch.setenv("SPACE_ID", "ColettoGS/zico-agent")
+    monkeypatch.setenv("GEMINI_API_KEY", "migration-secret-material")
+
+    from src.diagnostics.runtime_evidence import build_runtime_evidence
+
+    evidence = build_runtime_evidence()
+    entry = evidence["environment"]["GEMINI_API_KEY"]
+
+    assert entry["classification"] == "secret"
+    assert entry["migration"] == "REQUIRES_SECRET_RECOVERY"
+    assert entry["redacted"] is True
+    assert "value" not in entry
+    assert entry["secretMigration"] == {
+        "secretRef": "huggingface:ColettoGS/zico-agent:GEMINI_API_KEY",
+        "valueSource": "huggingface-space-secret",
+        "recoveryAction": "RECOVER_OR_ROTATE_SECRET",
+    }
+
+    assert "migration-secret-material" not in repr(evidence)
+
+
+def test_redis_url_is_treated_as_credential_bearing(monkeypatch):
+    redis_url = "redis://runtime-user:runtime-password@redis.internal:6379/0"
+    monkeypatch.setenv("REDIS_URL", redis_url)
+
+    from src.diagnostics.runtime_evidence import build_runtime_evidence
+
+    evidence = build_runtime_evidence()
+    entry = evidence["environment"]["REDIS_URL"]
+
+    assert entry["classification"] == "secret"
+    assert entry["migration"] == "REQUIRES_SECRET_RECOVERY"
+    assert entry["redacted"] is True
+    assert "value" not in entry
+    assert entry["secretMigration"]["secretRef"].endswith(":REDIS_URL")
+    assert entry["secretMigration"]["recoveryAction"] == "RECOVER_OR_ROTATE_SECRET"
+    assert redis_url not in repr(evidence)
+
+
+
+def test_production_huggingface_metadata_is_control_plane_state(monkeypatch):
+    platform_values = {
+        "ACCELERATOR": "cpu",
+        "COMMIT_SHA": "a" * 40,
+        "CPU_CORES": "2",
+        "IMAGE_SHA": "b" * 40,
+        "MEMORY": "16GiB",
+        "SPACE_AUTHOR_NAME": "ColettoGS",
+        "SPACE_CREATOR_USER_ID": "production-user-id",
+        "SPACE_HOST": "colettogs-zico-agent.hf.space",
+        "SPACE_ID": "ColettoGS/zico-agent",
+        "SPACE_REPO_NAME": "zico-agent",
+        "SPACE_SUBDOMAIN": "colettogs-zico-agent",
+        "SPACE_TITLE": "zico-agent",
+    }
+
+    for name, value in platform_values.items():
+        monkeypatch.setenv(name, value)
+
+    from src.diagnostics.runtime_evidence import build_runtime_evidence
+
+    evidence = build_runtime_evidence()
+
+    for name, value in platform_values.items():
+        entry = evidence["environment"][name]
+        assert entry["classification"] == "huggingface-system"
+        assert entry["migration"] == "REQUIRES_PLATFORM_CONTROL_PLANE"
+        assert entry["redacted"] is False
+        assert entry["value"] == value
+
+
+def test_platform_classification_does_not_expose_runtime_internals(monkeypatch):
+    runtime_values = {
+        "HOME": "/home/user",
+        "HOSTNAME": "runtime-host",
+        "KUBERNETES_SERVICE_HOST": "10.0.0.1",
+        "PATH": "/usr/local/bin",
+        "PWD": "/app",
+        "PYTHONPATH": "/app",
+    }
+
+    for name, value in runtime_values.items():
+        monkeypatch.setenv(name, value)
+
+    from src.diagnostics.runtime_evidence import build_runtime_evidence
+
+    evidence = build_runtime_evidence()
+    serialized = repr(evidence)
+
+    for name, value in runtime_values.items():
+        entry = evidence["environment"][name]
+        assert entry["classification"] == "runtime"
+        assert entry["migration"] == "OBSERVATIONAL_ONLY"
+        assert entry["redacted"] is True
+        assert "value" not in entry
+        assert value not in serialized

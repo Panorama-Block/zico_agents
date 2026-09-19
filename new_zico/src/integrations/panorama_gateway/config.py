@@ -18,7 +18,7 @@ class PanoramaGatewaySettings:
 
     base_url: str
     jwt_secret: str
-    tenant_id: str = "tenant-agent"
+    tenant_id: str = "panorama"
     service_name: str = "zico-agent"
     roles: List[str] = field(default_factory=lambda: ["agent"])
     jwt_audience: Optional[str] = None
@@ -40,7 +40,7 @@ class PanoramaGatewaySettings:
         return cls(
             base_url=base_url.rstrip("/"),
             jwt_secret=secret,
-            tenant_id=os.getenv("PANORAMA_GATEWAY_TENANT", "tenant-agent"),
+            tenant_id="panorama",
             service_name=os.getenv("PANORAMA_GATEWAY_SERVICE", "zico-agent"),
             roles=_split_roles(os.getenv("PANORAMA_GATEWAY_ROLES", "agent")),
             jwt_audience=os.getenv("PANORAMA_GATEWAY_JWT_AUDIENCE"),

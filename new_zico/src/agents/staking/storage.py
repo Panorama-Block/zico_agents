@@ -70,7 +70,7 @@ class StakingStateRepository:
             self._state = {"intents": {}, "metadata": {}, "history": {}}
 
     def _tenant_id(self) -> str:
-        return self._settings.tenant_id if self._settings else "tenant-agent"
+        return self._settings.tenant_id if self._settings else "panorama"
 
     def _session_identifier(self, user_id: str, conversation_id: str) -> str:
         return f"{STAKING_AGENT_NAME}:{user_id}:{conversation_id}"

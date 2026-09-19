@@ -92,7 +92,9 @@ def test_runtime_evidence_reports_effective_gateway_contract(diagnostic_environm
     gateway = evidence["panorama_gateway"]
 
     assert gateway["url"] == "https://gateway.example"
-    assert gateway["tenant"] == "tenant-agent"
+    assert gateway["tenant"] == "panorama"
+    assert gateway["tenant_environment"]["configured"] is True
+    assert gateway["tenant_environment"]["matches_effective"] is False
     assert gateway["service"] == "zico-agent"
     assert gateway["roles"] == ["agent", "service"]
     assert gateway["timeout"] == "17"

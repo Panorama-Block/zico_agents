@@ -66,7 +66,7 @@ class LiquidityStateRepository:
             self._state = {"intents": {}, "metadata": {}, "history": {}}
 
     def _tenant_id(self) -> str:
-        return self._settings.tenant_id if self._settings else "tenant-agent"
+        return self._settings.tenant_id if self._settings else "panorama"
 
     def _fallback_to_local_store(self) -> None:
         if self._use_gateway:

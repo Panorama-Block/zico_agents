@@ -238,7 +238,18 @@ def build_runtime_evidence() -> dict[str, Any]:
 
     panorama_gateway = {
         "url": os.environ.get("PANORAMA_GATEWAY_URL"),
-        "tenant": os.environ.get("PANORAMA_GATEWAY_TENANT", "tenant-agent"),
+        "tenant": "panorama",
+        "tenant_environment": {
+            "configured": bool(
+                (os.environ.get("PANORAMA_GATEWAY_TENANT") or "").strip()
+            ),
+            "matches_effective": (
+                not (os.environ.get("PANORAMA_GATEWAY_TENANT") or "").strip()
+                or (
+                    os.environ.get("PANORAMA_GATEWAY_TENANT") or ""
+                ).strip() == "panorama"
+            ),
+        },
         "service": os.environ.get("PANORAMA_GATEWAY_SERVICE", "zico-agent"),
         "roles": _split_roles(os.environ.get("PANORAMA_GATEWAY_ROLES", "agent")),
         "timeout": os.environ.get("PANORAMA_GATEWAY_TIMEOUT", "10"),
